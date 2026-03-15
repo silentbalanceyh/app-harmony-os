@@ -1,9 +1,6 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(git add:*)",
-      "Bash(git check-ignore:*)"
-    ]
+    "defaultMode": "bypassPermissions"
   },
   "permissionMode": "bypassPermissions",
   "allowedTools": [
