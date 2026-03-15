@@ -10,6 +10,12 @@ GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Global config (set by read_app_config)
+APP_NAME="${APP_NAME:-}"
+APP_NAMES=("${APP_NAMES[@]+"${APP_NAMES[@]}"}")
+DEVICE_ID="${DEVICE_ID:-}"
+BUILD_MODE="${BUILD_MODE:-}"
+
 info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
@@ -51,26 +57,53 @@ discover_apps() {
   echo "${found[*]:-}"
 }
 
-# Parse --app / --apps / --mode / --device flags
-# Usage: parse_args "$@"
-# Sets: APP_NAME, APP_NAMES (array), BUILD_MODE, DEVICE_ID
-APP_NAME=""
-APP_NAMES=()
-BUILD_MODE="dev"
-DEVICE_ID=""
+# Read current app/device from root app.json
+# Sets: APP_NAME, APP_NAMES, DEVICE_ID
+read_app_config() {
+  local root="$1"
+  local cfg="$root/app.json"
 
-parse_args() {
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --app)    APP_NAME="$2";  shift 2 ;;
-      --apps)   IFS=',' read -ra APP_NAMES <<< "$2"; shift 2 ;;
-      --mode)   BUILD_MODE="$2"; shift 2 ;;
-      --device) DEVICE_ID="$2"; shift 2 ;;
-      *) warn "Unknown argument: $1"; shift ;;
-    esac
-  done
-  # If --app given, treat as single-element APP_NAMES
-  if [[ -n "$APP_NAME" && ${#APP_NAMES[@]} -eq 0 ]]; then
-    APP_NAMES=("$APP_NAME")
+  if [[ ! -f "$cfg" ]]; then
+    error "Missing $cfg"
+    error "Create it like: { \"app\": \"demo\", \"device\": \"\" }"
+    exit 1
   fi
+
+  local app
+  app="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("app",""))' "$cfg" 2>/dev/null || true)"
+  local device
+  device="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("device",""))' "$cfg" 2>/dev/null || true)"
+
+  if [[ -z "$app" ]]; then
+    error "app.json missing non-empty 'app' field"
+    exit 1
+  fi
+
+  APP_NAME="$app"
+  APP_NAMES=("$app")
+  DEVICE_ID="$device"
+}
+
+# Write selected device into app.json
+write_device_config() {
+  local root="$1"
+  local device="$2"
+  local cfg="$root/app.json"
+
+  python3 - "$cfg" "$device" <<'PY'
+import json,sys
+path=sys.argv[1]
+device=sys.argv[2]
+with open(path,'r',encoding='utf-8') as f:
+  data=json.load(f)
+data['device']=device
+with open(path,'w',encoding='utf-8') as f:
+  json.dump(data,f,ensure_ascii=False,indent=2)
+  f.write('\n')
+PY
+}
+
+# Parse args is disabled (dev-only workflow)
+parse_args() {
+  :
 }

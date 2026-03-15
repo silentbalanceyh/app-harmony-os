@@ -1,0 +1,10 @@
+{
+  "modelVersion": "5.0.0",
+  "description": "HarmonyOS Multi-App Workspace",
+  "subPackages": [
+    {
+      "name": "demo",
+      "path": "./apps/demo"
+    }
+  ]
+}

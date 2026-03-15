@@ -11,19 +11,12 @@ main() {
   local root
   root="$(workspace_root)"
 
-  parse_args "$@"
+  read_app_config "$root"
   source "$root/scripts/config/prod.sh"
 
-  check_deveco_installation
+  check_deveco_installation true
 
-  if [[ ${#APP_NAMES[@]} -eq 0 ]]; then
-    error "Please specify --app <name> or --apps <a,b,c> for deploy"
-    exit 1
-  fi
-
-  for app in "${APP_NAMES[@]}"; do
-    install_app "$app" "$DEVICE_ID"
-  done
+  install_app "$APP_NAME" "$DEVICE_ID"
 
   ok "Deploy completed"
 }

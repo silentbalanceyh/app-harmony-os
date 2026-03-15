@@ -21,7 +21,7 @@ Shell script toolkit for managing multi-app HarmonyOS development workflows.
 ./dev-build.sh --app myapp --mode prod
 
 # Deploy to device
-./run-prod.sh --app myapp --device <device-id>
+./run-start.sh --app myapp --device <device-id>
 
 # Stop development environment
 ./dev-stop.sh
@@ -51,7 +51,7 @@ Starts dev environment with hot reload enabled.
 ### Production Build & Deploy
 
 ```bash
-./run-prod.sh [--app <name>] [--device <id>]
+./run-start.sh [--app <name>] [--device <id>]
 ```
 
 Builds in release mode and deploys to device.
@@ -69,7 +69,7 @@ Builds in release mode and deploys to device.
 ./dev-build.sh --apps app1,app2,app3 --mode dev
 
 # Deploy multiple apps
-./run-prod.sh --apps app1,app2
+./run-start.sh --apps app1,app2
 ```
 
 ## Configuration

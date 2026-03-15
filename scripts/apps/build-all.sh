@@ -11,21 +11,7 @@ main() {
   local root
   root="$(workspace_root)"
 
-  parse_args "$@"
-
-  # Load config based on mode
-  case "$BUILD_MODE" in
-    dev|debug)
-      source "$root/scripts/config/dev.sh"
-      ;;
-    prod|release)
-      source "$root/scripts/config/prod.sh"
-      ;;
-    *)
-      error "Invalid --mode: $BUILD_MODE (expected dev|prod)"
-      exit 1
-      ;;
-  esac
+  read_app_config "$root"
 
   check_deveco_installation
 
@@ -47,7 +33,7 @@ main() {
   info "Apps to build: ${apps_to_build[*]}"
 
   for app in "${apps_to_build[@]}"; do
-    build_app "$app" "$BUILD_MODE"
+    build_app "$app" "${BUILD_MODE:-debug}"
   done
 
   ok "Build completed"

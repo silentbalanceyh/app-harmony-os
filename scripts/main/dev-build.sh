@@ -10,10 +10,13 @@ main() {
   local root
   root="$(workspace_root)"
 
-  parse_args "$@"
+  read_app_config "$root"
 
-  info "Starting build (mode: $BUILD_MODE)..."
-  bash "$root/scripts/apps/build-all.sh" "$@"
+  # Set BUILD_MODE for build-all.sh
+  export BUILD_MODE="dev"
+
+  info "Building app: $APP_NAME (mode: dev)..."
+  bash "$root/scripts/apps/build-all.sh"
 }
 
 main "$@"

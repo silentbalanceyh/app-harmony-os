@@ -7,28 +7,31 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../utils/common.sh"
 
-# Check DevEco Studio installation
+# Check DevEco Studio installation (non-fatal for empty workspace)
 check_deveco_installation() {
+  local strict="${1:-false}"
   info "Checking DevEco Studio installation..."
+
+  local has_hvigor=false
+  local has_hdc=false
 
   # Check for hvigorw (HarmonyOS build tool)
   if command -v hvigorw &>/dev/null; then
     ok "Found hvigorw: $(which hvigorw)"
+    has_hvigor=true
   elif [[ -f "./hvigorw" ]]; then
     ok "Found local hvigorw in current directory"
+    has_hvigor=true
   else
     warn "hvigorw not found in PATH or current directory"
-    error "Please ensure DevEco Studio is installed and hvigorw is available"
-    return 1
   fi
 
   # Check for hdc (HarmonyOS device connector)
   if command -v hdc &>/dev/null; then
-    ok "Found hdc: $(which hdc)"
+  ok "Found hdc: $(which hdc)"
+    has_hdc=true
   else
     warn "hdc not found in PATH"
-    error "Please ensure HarmonyOS SDK is installed and hdc is available"
-    return 1
   fi
 
   # Check SDK path if set
@@ -37,6 +40,20 @@ check_deveco_installation() {
   else
     warn "HARMONY_SDK_PATH not set or directory not found"
   fi
+
+  # Only fail if strict mode and tools missing
+  if [[ "$strict" == "true" ]]; then
+    if [[ "$has_hvigor" == "false" ]]; then
+      error "hvigorw is required for build operations"
+      return 1
+    fi
+    if [[ "$has_hdc" == "false" ]]; then
+      error "hdc is required for device operations"
+      return 1
+    fi
+  fi
+
+  return 0
 }
 
 # Get hvigor command (prefer local wrapper)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-prod.sh (main) - Production run/deploy
+# run-start.sh (main) - Production run/deploy
 
 set -euo pipefail
 
@@ -11,17 +11,17 @@ main() {
   local root
   root="$(workspace_root)"
 
-  parse_args "$@"
+  read_app_config "$root"
   source "$root/scripts/config/prod.sh"
 
-  info "Starting production deploy..."
-  check_deveco_installation
+  info "Deploying app: $APP_NAME to device: ${DEVICE_ID:-default}"
+  check_deveco_installation true
 
   # Build first in prod mode
-  bash "$root/scripts/apps/build-all.sh" --mode prod "${APP_NAME:+--app $APP_NAME}"
+  bash "$root/scripts/apps/build-all.sh"
 
   # Then deploy
-  bash "$root/scripts/apps/deploy.sh" "$@"
+  bash "$root/scripts/apps/deploy.sh"
 }
 
 main "$@"
