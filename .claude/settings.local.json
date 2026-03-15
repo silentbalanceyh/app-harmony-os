@@ -1,12 +1,13 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git check-ignore:*)"
+    ]
+  },
   "permissionMode": "bypassPermissions",
   "allowedTools": [
     "*"
   ],
-  "dangerouslyDisableSandbox": false,
-  "permissions": {
-    "allow": [
-      "Bash(git add:*)"
-    ]
-  }
+  "dangerouslyDisableSandbox": false
 }
