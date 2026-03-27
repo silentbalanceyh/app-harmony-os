@@ -1,101 +1,82 @@
-# HarmonyOS Development Scripts
+# HarmonyOS Multi-App Workspace
 
-Shell script toolkit for managing multi-app HarmonyOS development workflows.
+This repository is a documentation-first HarmonyOS phone workspace. The repository root is not a buildable HarmonyOS project. All real applications live under top-level `app-*` directories and are built independently.
 
-## Prerequisites
+## Apps
 
-- DevEco Studio installed
-- `hvigorw` available (in project root or PATH)
-- `hdc` available (HarmonyOS Device Connector)
+- `app-center`: unified launcher and app center
+- `app-monitor`: monitoring app
+- `app-security`: security app
+- `app-hello`: sample business app
+
+## Directory Layout
+
+```text
+app-harmony-os/
+├── app-center/
+├── app-monitor/
+├── app-security/
+├── app-hello/
+├── .cursor/rules/
+├── .r2mo/
+├── AGENTS.md
+├── CLAUDE.md
+├── README.md
+└── start-simulator.sh
+```
+
+## Rule Files
+
+The machine-readable workspace rules are split by topic under `.cursor/rules/` and should be read in lexical order:
+
+- `00-harmony-workspace.mdc`
+- `10-workspace-structure.mdc`
+- `20-launch-and-runtime.mdc`
+- `30-scripts-and-debug.mdc`
+- `40-task-workflow-and-docs.mdc`
 
 ## Quick Start
 
 ```bash
-# Start development environment
-./dev-start.sh
-
-# Build apps (dev mode)
-./dev-build.sh --mode dev
-
-# Build specific app
-./dev-build.sh --app myapp --mode prod
-
-# Deploy to device
-./run-start.sh --app myapp --device <device-id>
-
-# Stop development environment
-./dev-stop.sh
+./start-simulator.sh
+cd app-center && ./dev-start.sh
 ```
 
-## Script Structure
+## Per-App Scripts
 
-```
-scripts/
-├── env/           # Tool discovery (deveco.sh, simulator.sh)
-├── apps/          # App operations (build-all.sh, dev-server.sh, deploy.sh)
-├── config/        # Environment configs (dev.sh, prod.sh)
-├── utils/         # Shared utilities (common.sh)
-└── main/          # Entry point implementations
-```
+Each app directory provides:
 
-## Usage
+- `dev-build.sh`: build the current app in debug mode
+- `dev-start.sh`: check simulator/device state, build, install, and launch the current app
+- `dev-stop.sh`: stop local hvigor-related processes
+- `run-start.sh`: release-oriented build, install, dependency handling, and launch
 
-### Development Mode
+Shared shell logic lives in each app’s `scripts/common.sh`.
 
-```bash
-./dev-start.sh [--app <name>] [--device <id>]
-```
+## Script Behavior
 
-Starts dev environment with hot reload enabled.
+- `app-*/dev-start.sh` and `app-*/run-start.sh` call root `start-simulator.sh` first
+- if no HarmonyOS target is connected, the scripts try to boot a local DevEco simulator
+- the preferred instance can be set with `EMULATOR_NAME`
+- failed simulator bootstrap is logged to `.logs/simulator-start.log`
+- automatic simulator startup can be disabled with `AUTO_START_EMULATOR=false`
+- dependency installation and peer launch flow are driven by each app’s `app.json`
 
-### Production Build & Deploy
+## Development Notes
 
-```bash
-./run-start.sh [--app <name>] [--device <id>]
-```
+- `app-center` is the desktop-visible default entry
+- child apps are hidden from the desktop by default
+- `app-center -> child app` can trigger a HarmonyOS system confirmation dialog
+- `child app -> app-center` is the preferred lower-friction return path
+- local sound effects are used for open and return actions
 
-Builds in release mode and deploys to device.
+## Task-Driven Workflow
 
-### Build Only
+- when work is assigned through `.r2mo/task/task-*.md`, read the Markdown body after frontmatter first
+- append a `Changes` record back to the same task file when the task explicitly requires it
 
-```bash
-./dev-build.sh --mode <dev|prod> [--app <name>]
-```
+## More Context
 
-### Multi-App Support
-
-```bash
-# Build multiple apps
-./dev-build.sh --apps app1,app2,app3 --mode dev
-
-# Deploy multiple apps
-./run-start.sh --apps app1,app2
-```
-
-## Configuration
-
-Edit `scripts/config/dev.sh` or `scripts/config/prod.sh` to customize:
-- API endpoints
-- Build flags
-- SDK paths
-- Environment variables
-
-## App Discovery
-
-Scripts auto-discover apps under `apps/` that contain:
-- `AppScope/` directory, or
-- `entry/` directory
-
-## Troubleshooting
-
-**Error: hvigorw not found**
-- Ensure DevEco Studio is installed
-- Run from project root containing `hvigorw`
-
-**Error: hdc not found**
-- Install HarmonyOS SDK
-- Add SDK bin directory to PATH
-
-**No apps discovered**
-- Add HarmonyOS apps under `apps/<appName>/`
-- Ensure app contains `AppScope/` or `entry/`
+- Read `AGENTS.md` for session routing rules
+- Read `CLAUDE.md` for the full workspace handbook
+- Read `.cursor/rules/*.mdc` in lexical order for fast machine-loaded context

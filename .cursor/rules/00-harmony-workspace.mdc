@@ -1,0 +1,38 @@
+# HarmonyOS Workspace Rule Index
+
+## Purpose
+
+This file is the stable top-level MDC entry for the HarmonyOS multi-app workspace.
+
+## Load Policy
+
+- Load `.cursor/rules/*.mdc` in lexical order.
+- Treat this file as the first machine-readable workspace summary.
+- Use the follow-up files for topic-specific detail instead of expanding this file indefinitely.
+
+## Workspace Identity
+
+- Repository type: HarmonyOS multi-app phone workspace
+- Root is documentation-first and is not a buildable HarmonyOS project
+- Buildable projects live only under top-level `app-*`
+
+## Active Apps
+
+- `app-center`
+- `app-monitor`
+- `app-security`
+- `app-hello`
+
+## Stable Baseline Rules
+
+- Do not restore HarmonyOS build files to repository root.
+- Keep root focused on docs, rules, hidden task material, and shared bootstrap scripts.
+- Treat `app-center` as the default desktop-visible entry.
+- Treat other apps as independently buildable projects managed from the center.
+
+## Topic File Map
+
+- `10-workspace-structure.mdc`
+- `20-launch-and-runtime.mdc`
+- `30-scripts-and-debug.mdc`
+- `40-task-workflow-and-docs.mdc`

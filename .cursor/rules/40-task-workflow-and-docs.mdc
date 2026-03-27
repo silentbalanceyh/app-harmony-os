@@ -1,0 +1,22 @@
+# HarmonyOS Task Workflow And Documentation Rules
+
+## Task Workflow
+
+- If work is assigned from `.r2mo/task/*.md`, read the Markdown body after frontmatter before changing code.
+- If a task explicitly requires a `Changes` section, append that record back into the same task file after implementation.
+- Task instructions override generic assumptions when they are specific to the requested work.
+
+## Session Startup
+
+- Read `AGENTS.md` first.
+- Read `CLAUDE.md` second.
+- Read `.cursor/rules/*.mdc` in lexical order.
+- Inspect the target `app-*` directory before editing code.
+- Read the target app’s `app.json`, `build-profile.json5`, `entry/src/main/module.json5`, and launch scripts.
+
+## Documentation Sync
+
+- If onboarding, scripts, architecture, runtime UX, or development flow changes, update `AGENTS.md`.
+- If onboarding, scripts, architecture, runtime UX, or development flow changes, update `CLAUDE.md`.
+- If the change should be machine-loaded early in future sessions, update the relevant `.cursor/rules/*.mdc` topic file.
+- Prefer updating only the topical MDC file instead of duplicating the same rule in every file.

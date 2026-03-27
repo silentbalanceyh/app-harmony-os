@@ -1,0 +1,17 @@
+{
+  "shortcuts": [
+    {
+      "shortcutId": "desktop-entry",
+      "label": "$string:EntryAbility_label",
+      "icon": "$media:layered_image",
+      "visible": false,
+      "wants": [
+        {
+          "bundleName": "com.zerows.appsecurity",
+          "moduleName": "entry",
+          "abilityName": "EntryAbility"
+        }
+      ]
+    }
+  ]
+}

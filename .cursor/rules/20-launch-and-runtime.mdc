@@ -1,0 +1,25 @@
+# HarmonyOS Launch And Runtime Rules
+
+## Launch Model
+
+- `app-center` is the default desktop entry.
+- Other apps are hidden from the desktop by default.
+- `app-center -> child app` can trigger a HarmonyOS system confirmation dialog.
+- `child app -> app-center` is the preferred lower-friction return flow.
+
+## UX Constraints
+
+- The system confirmation dialog is controlled by HarmonyOS.
+- App code cannot reliably remove or restyle that system dialog.
+- App-owned UX should instead focus on clear launch wording, return-path consistency, and sound cues.
+
+## Current Runtime Details
+
+- Child apps currently include `EntryAbility`, `AppBridgeService`, `Index.ets`, and `SoundEffectPlayer.ets`.
+- Local short sound effects exist for open and return actions.
+- App launch relationships should be read from each app’s `app.json`.
+
+## Scaling Rule
+
+- When new apps are added, keep the center-orchestrated launch model unless the product architecture explicitly changes.
+- New apps should follow the same hidden-by-default pattern unless desktop visibility is intentionally required.

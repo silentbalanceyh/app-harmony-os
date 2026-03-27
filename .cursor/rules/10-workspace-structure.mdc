@@ -1,0 +1,31 @@
+# HarmonyOS Workspace Structure Rules
+
+## Root Rules
+
+- Do not restore `hvigorfile.ts`, `build-profile.json5`, `oh-package.json5`, or other HarmonyOS project files to repository root.
+- Keep root limited to documentation, `.r2mo/` material, `.cursor/rules/`, logs, and shared scripts such as `start-simulator.sh`.
+- Every real app must remain isolated inside its own top-level `app-*` directory.
+
+## App Rules
+
+- Each `app-*` directory is a standalone HarmonyOS app project.
+- Each app must own its own `AppScope/`, `entry/`, `build-profile.json5`, `oh-package.json5`, `hvigorfile.ts`, and `app.json`.
+- Each app must provide `dev-build.sh`, `dev-start.sh`, `dev-stop.sh`, and `run-start.sh`.
+- Shared shell logic should stay inside each app’s `scripts/common.sh`.
+
+## App Relationship Source Of Truth
+
+Use each app’s `app.json` for:
+
+- `bundleName`
+- `moduleName`
+- `abilityName`
+- `dependsOn`
+- `launchTargets`
+
+## Current App Set
+
+- `app-center`: unified launcher and app center
+- `app-monitor`: monitoring app
+- `app-security`: security app
+- `app-hello`: sample business app

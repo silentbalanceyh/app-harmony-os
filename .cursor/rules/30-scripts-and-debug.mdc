@@ -1,0 +1,39 @@
+# HarmonyOS Scripts And Debug Rules
+
+## Primary Execution Path
+
+- First choice for local development is `cd <app> && ./dev-start.sh`.
+- Shared simulator bootstrap entry is `./start-simulator.sh`.
+- `dev-start.sh` should remain the default path before inventing custom launch flows.
+
+## Script Rules
+
+- `dev-start.sh` and `run-start.sh` must check simulator/device connectivity first.
+- If no HarmonyOS target is connected, scripts should attempt root `start-simulator.sh`.
+- Dependency installation behavior is controlled by per-app `app.json` through `dependsOn`.
+- Launch fan-out behavior is controlled by per-app `app.json` through `launchTargets`.
+
+## Current Tooling Baseline
+
+- ArkTS
+- ArkUI
+- hvigor
+- DevEco Studio
+- `hdc`
+- HarmonyOS SDK `6.0.2(22)` in current workspace usage
+
+## Preferred Debug Entry Points
+
+- Build: `cd app-center && ./dev-build.sh`
+- Start: `cd app-center && ./dev-start.sh`
+- Stop hvigor processes: `cd app-center && ./dev-stop.sh`
+- Simulator bootstrap: `./start-simulator.sh`
+- Device list: `hdc list targets`
+- Ability state: `hdc shell aa dump --mission-list`
+- Package state: `hdc shell bm dump -a`
+- System logs: `hdc shell hilog -x`
+
+## Log And Failure Locations
+
+- Root simulator startup failures go to `.logs/simulator-start.log`.
+- Runtime crash investigation should use `hilog`, mission dumps, and system fault logs.

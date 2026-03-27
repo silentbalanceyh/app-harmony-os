@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Hello 模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Hello 应用启动能力"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Hello 应用"
+    }
+  ]
+}

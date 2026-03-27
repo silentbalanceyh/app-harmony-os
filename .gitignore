@@ -1,18 +1,37 @@
-# DevEco / IntelliJ
+# OS / Editor
+.DS_Store
 .idea/
 *.iml
+*.swp
+*.swo
 
-# HarmonyOS / Hvigor
+# Local agent state
+.codex/config.toml
+
+# Local temporary assets
+.tmp-sfx/
+
+# HarmonyOS / DevEco / Hvigor
 .hvigor/
 .ohos/
-/build/
-/dist/
+.preview/
+.test/
+.cache/
+build/
+dist/
+**/build/
+**/dist/
+**/.hvigor/
+**/.ohos/
+**/.preview/
+**/.test/
+**/.cache/
+**/.deveco-sdk-shim/
+**/.logs/
 
-# Node
+# Package manager
 node_modules/
 
 # Logs
 *.log
-
-# OS
-.DS_Store
+/.logs/
