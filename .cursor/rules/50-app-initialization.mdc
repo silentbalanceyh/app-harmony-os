@@ -1,0 +1,95 @@
+# HarmonyOS App Initialization Flow
+
+## When To Use
+
+Apply this flow when the task is explicitly about creating, initializing, scaffolding, cloning, or first-time wiring a new top-level `app-*` HarmonyOS application in this workspace.
+
+Examples:
+
+- create a new `app-*` application
+- initialize a reminder app / dashboard app / business app
+- scaffold a new child app and make it appear in `app-center`
+- clone an existing app as the starting point for a new app
+
+Do not use this flow for routine edits inside an already-established app unless the task also changes workspace-level app registration.
+
+## Naming And Placement
+
+- New apps must use the `app-` prefix.
+- New apps must live directly under repository root as `app-*/`.
+- Do not create HarmonyOS build files at repository root.
+
+## Required App Skeleton
+
+Every initialized app must include at least:
+
+- `AppScope/`
+- `entry/`
+- `build-profile.json5`
+- `oh-package.json5`
+- `hvigorfile.ts`
+- `app.json`
+- `dev-build.sh`
+- `dev-start.sh`
+- `dev-stop.sh`
+- `run-start.sh`
+- `scripts/common.sh`
+
+## Preferred Initialization Method
+
+- Prefer cloning the closest existing `app-*` scaffold instead of generating files from scratch.
+- After cloning, immediately rewrite app identity:
+  - directory name
+  - `app.json`
+  - `AppScope/app.json5`
+  - resource strings
+  - bundle name
+  - labels and app-specific text
+- Remove copied transient artifacts from the new app before verification:
+  - `.deveco-sdk-shim/`
+  - `.hvigor/`
+  - `build/`
+  - `entry/build/`
+
+## Workspace Registration
+
+When a new app is initialized:
+
+- add it to `app-center/app.json`:
+  - `dependsOn`
+  - `launchTargets`
+- add a visible management card entry in `app-center/entry/src/main/ets/pages/Index.ets`
+- keep the default workspace model:
+  - `app-center` remains the desktop-visible main entry
+  - new child apps are hidden from desktop by default unless the task explicitly says otherwise
+- update sibling app `dependsOn` only when the workspace convention expects the new app to be part of the shared base set
+
+## App-Level Requirement Capture
+
+- Create `REQ.md` inside the new `app-*` directory when the task is initializing a new business app or new product requirement.
+- `REQ.md` should capture:
+  - app positioning
+  - core goals
+  - target users
+  - MVP scope
+  - workspace integration expectations
+
+## Verification Minimum
+
+Initialization is not complete until these checks are attempted:
+
+- build the new app with `cd <new-app> && ./dev-build.sh`
+- build the center with `cd app-center && ./dev-build.sh`
+- if simulator/device is available, run `cd app-center && ./dev-start.sh`
+- confirm the new app can at least be installed and managed through `app-center`
+
+If simulator or device verification is blocked, state that explicitly.
+
+## Documentation Sync
+
+When a new `app-*` is initialized, update the early-load docs:
+
+- `CLAUDE.md`
+- `CODEX.md`
+- `AGENTS.md` if startup guidance or app inventory changed
+- the relevant `.cursor/rules/*.mdc` files when app inventory or initialization workflow changed

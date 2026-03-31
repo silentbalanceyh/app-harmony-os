@@ -37,3 +37,4 @@ This file is the stable top-level MDC entry for the HarmonyOS multi-app workspac
 - `20-launch-and-runtime.mdc`
 - `30-scripts-and-debug.mdc`
 - `40-task-workflow-and-docs.mdc`
+- `50-app-initialization.mdc`
