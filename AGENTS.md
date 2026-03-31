@@ -32,6 +32,7 @@ For any new session in this repository, load context in this order:
 - `app-monitor`: monitoring app.
 - `app-security`: security app.
 - `app-hello`: sample business app.
+- `app-medication`: medication reminder app centered on elderly health.
 
 ## Runtime Rules
 

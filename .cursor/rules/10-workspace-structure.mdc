@@ -29,3 +29,4 @@ Use each app’s `app.json` for:
 - `app-monitor`: monitoring app
 - `app-security`: security app
 - `app-hello`: sample business app
+- `app-medication`: medication reminder app for elderly health

@@ -26,6 +26,10 @@ normalize_output() {
   tr -d '\r'
 }
 
+is_macos() {
+  [[ "$(uname -s)" == "Darwin" ]]
+}
+
 require_executable() {
   local path="$1"
   local name="$2"
@@ -75,11 +79,30 @@ wait_for_connection_once() {
   return 1
 }
 
+launch_emulator_background() {
+  local -a cmd=("$@")
+  local pid
+
+  nohup "${cmd[@]}" >"$LOG_FILE" 2>&1 &
+  pid="$!"
+  echo "$pid"
+}
+
+launch_emulator_via_terminal() {
+  local emulator_name="$1"
+  local helper_script="$LOG_DIR/start-emulator.command"
+
+  cat >"$helper_script" <<EOF
+#!/usr/bin/env bash
+exec "$DEVECO_EMULATOR" -hvd "$emulator_name" -path "$DEFAULT_EMULATOR_INSTANCE_PATH" -imageRoot "$DEFAULT_EMULATOR_IMAGE_ROOT"
+EOF
+  chmod +x "$helper_script"
+  open -a Terminal "$helper_script" >/dev/null 2>&1
+}
+
 main() {
   local auto_start="${AUTO_START_EMULATOR:-true}"
   local emulator_name
-  local trace_name
-  local emulator_pid
   local attempt
   local -a cmd
 
@@ -107,8 +130,6 @@ main() {
   if [[ -n "$DEFAULT_EMULATOR_INSTANCE_PATH" ]]; then
     cmd+=(-path "$DEFAULT_EMULATOR_INSTANCE_PATH")
   fi
-  trace_name="trace_$$_commandPipe"
-  cmd+=(-t "$trace_name")
   if [[ -n "$DEFAULT_EMULATOR_IMAGE_ROOT" ]]; then
     cmd+=(-imageRoot "$DEFAULT_EMULATOR_IMAGE_ROOT")
   fi
@@ -117,25 +138,21 @@ main() {
   fi
 
   info "No HarmonyOS simulator/device connected, attempting to start: $emulator_name"
-  nohup "${cmd[@]}" >"$LOG_FILE" 2>&1 &
-  emulator_pid="$!"
+  if is_macos; then
+    launch_emulator_via_terminal "$emulator_name" || {
+      warn "Terminal-hosted emulator launch failed, falling back to background launch"
+      launch_emulator_background "${cmd[@]}" >/dev/null
+    }
+  else
+    launch_emulator_background "${cmd[@]}" >/dev/null
+  fi
 
   for ((attempt = 1; attempt <= 5; attempt += 1)); do
     if wait_for_connection_once 1; then
-      disown "$emulator_pid" 2>/dev/null || true
       ok "HarmonyOS simulator connected"
       return 0
     fi
-
-    if ! kill -0 "$emulator_pid" 2>/dev/null; then
-      warn "Automatic simulator start exited early"
-      warn "Check simulator log: $LOG_FILE"
-      error "No HarmonyOS simulator/device connected"
-      return 1
-    fi
   done
-
-  disown "$emulator_pid" 2>/dev/null || true
 
   for ((attempt = 1; attempt <= 20; attempt += 1)); do
     if wait_for_connection_once 2; then

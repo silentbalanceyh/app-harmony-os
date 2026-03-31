@@ -7,7 +7,8 @@
   "dependsOn": [
     "app-center",
     "app-monitor",
-    "app-security"
+    "app-security",
+    "app-medication"
   ],
   "launchTargets": [
     "app-center"

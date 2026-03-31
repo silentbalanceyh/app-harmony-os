@@ -1,0 +1,16 @@
+{
+  "app": "app-medication",
+  "device": "",
+  "bundleName": "com.zerows.appmedication",
+  "moduleName": "entry",
+  "abilityName": "EntryAbility",
+  "dependsOn": [
+    "app-center",
+    "app-monitor",
+    "app-security",
+    "app-hello"
+  ],
+  "launchTargets": [
+    "app-center"
+  ]
+}

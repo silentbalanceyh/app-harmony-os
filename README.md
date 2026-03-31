@@ -8,6 +8,7 @@ This repository is a documentation-first HarmonyOS phone workspace. The reposito
 - `app-monitor`: monitoring app
 - `app-security`: security app
 - `app-hello`: sample business app
+- `app-medication`: medication reminder app focused on elderly health
 
 ## Directory Layout
 
@@ -17,6 +18,7 @@ app-harmony-os/
 ├── app-monitor/
 ├── app-security/
 ├── app-hello/
+├── app-medication/
 ├── .cursor/rules/
 ├── .r2mo/
 ├── AGENTS.md

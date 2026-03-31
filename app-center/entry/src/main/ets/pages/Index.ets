@@ -96,6 +96,22 @@ struct Index {
       supportsInstallOnDemand: true,
       canUninstall: true,
       showOnDesktop: false
+    },
+    {
+      id: 'app-medication',
+      label: '用药提醒',
+      shortLabel: 'Medication',
+      bundleName: 'com.zerows.appmedication',
+      moduleName: 'entry',
+      abilityName: 'EntryAbility',
+      serviceName: 'AppBridgeService',
+      description: '面向老年人健康管理，负责按时提醒、服药确认和家属协助提示。',
+      iconGlyph: '药',
+      accentColor: '#C2410C',
+      installed: false,
+      supportsInstallOnDemand: true,
+      canUninstall: true,
+      showOnDesktop: false
     }
   ];
   @State private selectedAppId: string = 'app-center';
@@ -159,6 +175,26 @@ struct Index {
       canUninstall: item.canUninstall,
       showOnDesktop
     };
+  }
+
+  private safeText(value: string | undefined, fallback: string = ''): string {
+    if (value === undefined || value === null) {
+      return fallback;
+    }
+    return value;
+  }
+
+  private getAppGlyph(target: ManagedApp): string {
+    if (target.iconGlyph) {
+      return target.iconGlyph;
+    }
+    if (target.shortLabel) {
+      return target.shortLabel.length > 2 ? target.shortLabel.slice(0, 2) : target.shortLabel;
+    }
+    if (target.label) {
+      return target.label.length > 2 ? target.label.slice(0, 2) : target.label;
+    }
+    return '应';
   }
 
   private getSelectedApp(): ManagedApp {
@@ -419,8 +455,8 @@ struct Index {
     Column({ space: 8 }) {
       Stack({ alignContent: Alignment.TopEnd }) {
         Column() {
-          Text(target.iconGlyph)
-            .fontSize(target.iconGlyph.length > 1 ? 24 : 30)
+          Text(this.getAppGlyph(target))
+            .fontSize(this.getAppGlyph(target).length > 1 ? 24 : 30)
             .fontWeight(FontWeight.Bold)
             .fontColor('#FFFFFF')
         }
@@ -448,7 +484,7 @@ struct Index {
         .translate({ x: 6, y: -6 })
       }
 
-      Text(target.label)
+      Text(this.safeText(target.label, target.id))
         .fontSize(13)
         .fontWeight(target.id === this.selectedAppId ? FontWeight.Bold : FontWeight.Medium)
         .fontColor('#122033')
@@ -475,7 +511,7 @@ struct Index {
             .fontSize(34)
             .fontWeight(FontWeight.Bold)
             .fontColor('#101828')
-          Text('统一分发、安装和管理四个基础应用。')
+          Text('统一分发、安装和管理五个基础应用。')
             .fontSize(16)
             .fontColor('#56667C')
         }
@@ -521,7 +557,7 @@ struct Index {
               }
             }, (app: ManagedApp) => app.id)
           }
-          .columnsTemplate('1fr 1fr 1fr 1fr')
+          .columnsTemplate('1fr 1fr 1fr')
           .columnsGap(10)
           .rowsGap(16)
           .width('100%')
@@ -532,7 +568,7 @@ struct Index {
 
         Column({ space: 14 }) {
           Row() {
-            Text(this.getSelectedApp().label)
+            Text(this.safeText(this.getSelectedApp().label, '应用中心'))
               .fontSize(24)
               .fontWeight(FontWeight.Bold)
               .fontColor('#0F172A')
@@ -546,7 +582,7 @@ struct Index {
           }
           .width('100%')
 
-          Text(this.getSelectedApp().description)
+          Text(this.safeText(this.getSelectedApp().description, '应用描述暂不可用。'))
             .fontSize(15)
             .fontColor('#475467')
             .lineHeight(22)
@@ -589,7 +625,7 @@ struct Index {
             Button(this.getSelectedApp().installed ? '进入应用' : '尝试安装')
               .layoutWeight(1)
               .height(46)
-              .backgroundColor(this.getSelectedApp().accentColor)
+              .backgroundColor(this.safeText(this.getSelectedApp().accentColor, '#1C65FF'))
               .fontColor('#FFFFFF')
               .fontSize(16)
               .onClick(() => {

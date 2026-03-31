@@ -30,6 +30,7 @@ app-harmony-os/
 ├── app-monitor/                # Monitoring app
 ├── app-security/               # Security app
 ├── app-hello/                  # Sample business app
+├── app-medication/             # Medication reminder app for elderly health
 ├── .cursor/rules/              # MDC rule files for fast machine onboarding
 ├── .r2mo/                      # Hidden task, requirement, design material
 ├── .logs/                      # Root-level simulator startup logs
@@ -71,10 +72,15 @@ app-harmony-os/
   - First sample business app.
   - Used to validate cross-app collaboration and runtime flow.
 
+- `app-medication`
+  - Reminder-oriented elderly health app.
+  - Focuses on medication schedules, taken-state confirmation, and caregiver escalation.
+  - Can return to `app-center`.
+
 ### Runtime Interaction Model
 
 - `app-center` is the default desktop entry.
-- `app-monitor`, `app-security`, and `app-hello` are hidden from the desktop by default.
+- `app-monitor`, `app-security`, `app-hello`, and `app-medication` are hidden from the desktop by default.
 - `app-center -> other app` may show a system confirmation dialog.
   - This dialog is controlled by HarmonyOS.
   - App code cannot restyle, rewrite, or remove it reliably.
@@ -132,19 +138,23 @@ entry/src/main/ets/
 Current app relationships are defined in `app.json`:
 
 - `app-center`
-  - depends on `app-monitor`, `app-security`, `app-hello`
-  - launch targets `app-monitor`, `app-security`, `app-hello`
+  - depends on `app-monitor`, `app-security`, `app-hello`, `app-medication`
+  - launch targets `app-monitor`, `app-security`, `app-hello`, `app-medication`
 
 - `app-monitor`
-  - depends on `app-center`, `app-security`, `app-hello`
+  - depends on `app-center`, `app-security`, `app-hello`, `app-medication`
   - launch target `app-center`
 
 - `app-security`
-  - depends on `app-center`, `app-monitor`, `app-hello`
+  - depends on `app-center`, `app-monitor`, `app-hello`, `app-medication`
   - launch target `app-center`
 
 - `app-hello`
-  - depends on `app-center`, `app-monitor`, `app-security`
+  - depends on `app-center`, `app-monitor`, `app-security`, `app-medication`
+  - launch target `app-center`
+
+- `app-medication`
+  - depends on `app-center`, `app-monitor`, `app-security`, `app-hello`
   - launch target `app-center`
 
 ## Task Material Conventions
@@ -162,6 +172,7 @@ cd app-center && ./dev-build.sh
 cd app-monitor && ./dev-build.sh
 cd app-security && ./dev-build.sh
 cd app-hello && ./dev-build.sh
+cd app-medication && ./dev-build.sh
 ```
 
 ### Start One App
@@ -171,6 +182,7 @@ cd app-center && ./dev-start.sh
 cd app-monitor && ./dev-start.sh
 cd app-security && ./dev-start.sh
 cd app-hello && ./dev-start.sh
+cd app-medication && ./dev-start.sh
 ```
 
 ### Stop Local hvigor Processes
@@ -180,6 +192,7 @@ cd app-center && ./dev-stop.sh
 cd app-monitor && ./dev-stop.sh
 cd app-security && ./dev-stop.sh
 cd app-hello && ./dev-stop.sh
+cd app-medication && ./dev-stop.sh
 ```
 
 ### Release-Oriented Start
@@ -189,6 +202,7 @@ cd app-center && ./run-start.sh
 cd app-monitor && ./run-start.sh
 cd app-security && ./run-start.sh
 cd app-hello && ./run-start.sh
+cd app-medication && ./run-start.sh
 ```
 
 ### Stop Notes

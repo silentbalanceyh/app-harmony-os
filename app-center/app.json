@@ -7,11 +7,13 @@
   "dependsOn": [
     "app-monitor",
     "app-security",
-    "app-hello"
+    "app-hello",
+    "app-medication"
   ],
   "launchTargets": [
     "app-monitor",
     "app-security",
-    "app-hello"
+    "app-hello",
+    "app-medication"
   ]
 }
