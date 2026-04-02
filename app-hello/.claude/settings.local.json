@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./dev-build.bat)",
+      "Bash(./dev-start.bat)",
+      "Bash(./dev-stop.bat)"
+    ]
+  }
+}
