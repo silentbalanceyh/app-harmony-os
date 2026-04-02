@@ -77,5 +77,6 @@ This repository ships split onboarding MDC files:
 - `.cursor/rules/20-launch-and-runtime.mdc`
 - `.cursor/rules/30-scripts-and-debug.mdc`
 - `.cursor/rules/40-task-workflow-and-docs.mdc`
+- `.cursor/rules/50-app-initialization.mdc`
 
 Read them in lexical order after `CLAUDE.md`.

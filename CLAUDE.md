@@ -13,6 +13,12 @@ All actual build targets live in top-level `app-*` directories.
 - Make `dev-start.sh` enough for most local development workflows.
 - Allow a new session to understand the workspace quickly without reverse engineering the repo layout.
 
+## When To Use App Initialization Flow
+
+Use the dedicated initialization flow in `.cursor/rules/50-app-initialization.mdc` when the task is about creating a new top-level `app-*` project, cloning an existing app as a new app, wiring a new app into `app-center`, or producing the first requirement baseline for a new app via `REQ.md`.
+
+Do not use that flow for normal edits inside an existing app unless the task also changes workspace-level app registration or app inventory.
+
 ## Quick Start
 
 ```bash
