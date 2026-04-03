@@ -83,12 +83,19 @@
 - 全局字体：鸿蒙默认字体（与现有项目一致），无特殊字体、无斜体、无下划线
     
 - 字号要求（新增补充）：
-    
+
     - 提醒时间：35px（加粗）
-        
-    - 今日提醒、药品名称：34px；提醒状态：32px（提醒状态加粗）
-        
-    - 底部删除提示：14px（颜色更浅）；服用剂量：25px（颜色更浅）；无提醒卡片时的提示文本：40px，黑色 #333333（不缩小，仅卡片内部文字、公共按钮文本缩小）；公共按钮文本：按原有默认字号缩小30%，适配整体风格
+
+    - 今日提醒：34px；提醒状态：32px（提醒状态加粗）
+
+    - 药品名称：**动态字号**（根据字数调整）
+        - ≤4 字：34px
+        - 5-6 字：28px
+        - 7-8 字：22px（进一步减小）
+        - 9-10 字：18px
+        - >10 字：16px（最小字号）
+
+    - 底部删除提示：14px（颜色更浅）；服用剂量：25px（颜色更浅，**统一显示阿拉伯数字**）；无提醒卡片时的提示文本：40px，黑色 #333333（不缩小，仅卡片内部文字、公共按钮文本缩小）；公共按钮文本：按原有默认字号缩小30%，适配整体风格
         
 - 字体颜色（新增补充）：
     
@@ -201,8 +208,8 @@ Button('打开监控中心').fontSize(22)  // 32 → 22
 | 提醒时间 | 50px | 35px | 缩小30% |
 | 提醒状态 | 45px | 32px | 缩小30% |
 | 今日提醒 | 48px | 34px | 缩小30% |
-| 药品名称 | 48px | 34px | 缩小30% |
-| 服用剂量 | 35px | 25px | 缩小30% |
+| 药品名称 | 48px | **动态** | ≤4字=34px, 5-6字=28px, 7-8字=24px, >8字=20px |
+| 服用剂量 | 35px | 25px | 缩小30%，统一阿拉伯数字 |
 | 底部删除提示 | 20px | 14px | 缩小30% |
 | 公共按钮文本 | 32px | 22px | 缩小30% |
 | 无提醒提示文本 | 40px | 40px | 不缩小 |
@@ -343,3 +350,274 @@ Column({ space: 12 }) {
 
 #### 验证结果
 - 构建状态: **BUILD SUCCESSFUL in 3 s 216 ms**
+
+---
+
+### 2026-04-03 更新：药品名称动态字号 + 剂量统一显示
+
+#### 问题 1：药品名称超长显示不全
+
+**现象**：药品名称超过 4 个字时，固定 34px 字号导致显示不全（如"阿莫西林胶囊"）
+
+**修复**：根据字数动态调整字号
+
+| 字数 | 字号 | 示例 |
+|------|------|------|
+| ≤4 字 | 34px | 降压药、钙片 |
+| 5-6 字 | 28px | 阿莫西林 |
+| 7-8 字 | 24px | 阿莫西林胶囊 |
+| >8 字 | 20px | 小儿氨酚黄那敏颗粒 |
+
+**代码实现**：
+```typescript
+private getMedicineNameFontSize(name: string): number {
+  const len = name.length;
+  if (len <= 4) return 34;
+  if (len <= 6) return 28;
+  if (len <= 8) return 24;
+  return 20;
+}
+
+// UI 中使用
+Text(r.medicineName)
+  .fontSize(this.getMedicineNameFontSize(r.medicineName))
+```
+
+#### 问题 2：剂量显示不统一
+
+**现象**：
+- 用户说"两片"，显示"两片"（中文数字）
+- 用户说"2片"，显示"2片"（阿拉伯数字）
+- 同一应用显示不统一
+
+**修复**：统一输出阿拉伯数字
+
+| 用户输入 | 输出显示 |
+|---------|---------|
+| 一片 / 1片 | **1片** |
+| 两片 / 2片 | **2片** |
+| 三片 / 3片 | **3片** |
+| 半片 | **0.5片** |
+
+**代码实现**：
+```typescript
+private parseDosageFromText(text: string): string {
+  const chineseToNumber: Record<string, string> = {
+    '半': '0.5', '一': '1', '二': '2', '两': '2', '三': '3',
+    '四': '4', '五': '5', '六': '6', '七': '7', '八': '8', '九': '9', '十': '10'
+  };
+
+  // 1. 匹配 "数字+单位" 格式（已是阿拉伯数字）
+  const digitMatch = text.match(/(\d+(?:\.\d+)?)\s*(片|颗|粒|袋|包|勺|支|丸|滴|个)/);
+  if (digitMatch) {
+    return digitMatch[1] + digitMatch[2];
+  }
+
+  // 2. 匹配 "中文数字+单位" 格式，转换为阿拉伯数字
+  const chineseNums = ['半', '一', '二', '两', '三', '四', '五', '六', '七', '八', '九', '十'];
+  const units = ['片', '颗', '粒', '袋', '包', '勺', '支', '丸', '滴', '个'];
+  for (const unit of units) {
+    for (const cn of chineseNums) {
+      if (text.includes(cn + unit)) {
+        return chineseToNumber[cn] + unit;
+      }
+    }
+  }
+
+  return '1片';
+}
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 2 s 401 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+### 2026-04-03 更新：药品库自检修复
+
+#### 问题识别
+药品库中存在多个别名重叠问题，可能导致不同药品被混淆：
+
+| 问题药品 | 问题描述 | 影响 |
+|---------|---------|-----|
+| 感冒药 vs 感冒灵 | 感冒药别名包含感冒灵 | 感冒灵有独立条目，别名重复 |
+| 钙片 vs 钙尔奇 | 钙片别名包含钙尔奇 | 钙尔奇有独立条目，别名重复 |
+| 维生素B12 vs 甲钴胺 | B12别名包含甲钴胺 | 甲钴胺有独立条目（不同剂型） |
+| 维D vs 钙尔奇D | 维D别名包含钙尔奇D | 与钙尔奇条目重叠 |
+
+#### 修复内容
+
+**1. 别名去重叠**
+```typescript
+// 感冒药：移除感冒灵别名
+{ name: '感冒药', aliases: ['感冒冲剂', '伤风药', '感冒胶囊'], ... }
+{ name: '感冒灵', aliases: ['感冒灵颗粒', '999感冒灵'], ... }  // 独立条目保留
+
+// 钙片：移除钙尔奇别名
+{ name: '钙片', aliases: ['碳酸钙', '葡萄糖酸钙'], ... }
+{ name: '钙尔奇', aliases: ['钙尔奇D', '碳酸钙D3'], ... }  // 独立条目保留
+
+// 维生素B12：移除甲钴胺别名
+{ name: '维生素B12', aliases: ['钴胺素'], ... }
+{ name: '甲钴胺', aliases: ['弥可保', '甲钴胺片', '甲基维生素B12'], ... }  // 独立条目
+
+// 维D：移除钙尔奇D别名
+{ name: '维D', aliases: ['维生素D', '维生素D3'], ... }
+```
+
+**2. ASR纠错映射补充**
+```typescript
+const knownAsrErrors: Record<string, string> = {
+  // 地黄丸系列区分
+  '六味地黄': '六味地黄丸',
+  '知柏地黄': '知柏地黄丸',
+  '杞菊地黄': '杞菊地黄丸',
+  // 感冒类区分
+  '感冒清热': '感冒清热',
+  '九九九感冒灵': '感冒灵',
+  '999感冒灵': '感冒灵',
+  // 头孢类区分
+  '先锋': '头孢拉定',
+  // 钙片类区分
+  '钙尔奇d': '钙尔奇',
+  '碳酸钙d3': '钙尔奇',
+  // 其他常见混淆
+  '复方丹参丸': '复方丹参片',
+  '丹参片': '复方丹参片',
+};
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 2 s 263 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+### 2026-04-03 更新：语音文本同步彻底修复
+
+#### 问题根因分析
+
+用户反馈："语音重复了复方丹参片，还没说完，文本就显示一天吃几次"
+
+**底层问题**（不是参数问题，是架构缺陷）：
+
+| 问题层 | 具体缺陷 | 影响 |
+|-------|---------|-----|
+| TTS引擎层 | `onComplete`事件可能丢失 | Promise永远不resolve |
+| 时序漏洞 | listener设置和speak调用竞态 | 事件触发时listener未就绪 |
+| 无保底机制 | 无超时兜底 | 卡住时代码阻塞或跳过 |
+
+#### 修复方案
+
+**1. VoiceService.speak()重构**
+```typescript
+async speak(text: string): Promise<void> {
+  // 关键改进：
+  // 1. 超时保底：按文本长度计算，每字300ms，最少3秒
+  // 2. 防多次resolve：resolved标志位
+  // 3. requestId校验：确保只响应当前请求
+  // 4. 播报后缓冲：onComplete后额外等待300ms
+  // 5. TTS不可用兜底：等待1.5秒让文本显示停留
+
+  const requestId = Date.now().toString();
+  let resolved = false;
+  const estimatedDuration = Math.max(3000, text.length * 300 + 500);
+
+  timeoutId = setTimeout(() => {
+    if (!resolved) { resolved = true; resolve(); }
+  }, estimatedDuration);
+
+  // 先设置listener，再调用speak（修复时序漏洞）
+  this.ttsEngine!.setListener({
+    onComplete: (reqId, response) => {
+      if (!resolved && reqId === requestId) {
+        resolved = true;
+        clearTimeout(timeoutId);
+        // 关键：额外300ms缓冲，确保声音完全结束
+        setTimeout(resolve, 300);
+      }
+    }
+  });
+
+  this.ttsEngine!.speak(text, { requestId, extraParams: {} });
+}
+```
+
+**2. Index.ets确认阶段等待时间延长**
+```typescript
+// Step 1 确认
+await this.voice.speak('好的，' + this.medName);
+await this.waitMs(800);  // 500ms → 800ms
+
+// Step 2 确认
+await this.voice.speak('好的，' + this.medFrequency);
+await this.waitMs(800);
+
+// Step 3 确认
+await this.voice.speak('好的，一次' + this.medDosage);
+await this.waitMs(800);
+
+// 最终确认
+await this.waitMs(3000);  // 2秒 → 3秒
+```
+
+#### 闭环验证
+- 构建状态: **BUILD SUCCESSFUL in 2 s 704 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+#### 顶层设计总结
+这次修复不是调参数，而是重构了TTS同步的底层逻辑：
+1. **保底机制**：超时兜底，防止卡住
+2. **时序控制**：先listener后speak，防止事件丢失
+3. **缓冲时间**：播报后额外等待，确保声音完全结束
+4. **requestId校验**：防止多请求事件混淆
+
+### 2026-04-03 更新：语音流程彻底重构
+
+#### 用户需求拆解
+
+| 环节 | 要求 |
+|------|------|
+| vadBegin（等待开始说话） | **5秒** |
+| vadEnd（说话结束后等待） | **3秒**（防止继续说） |
+| 识别后重复播报 | 文本和语音严格同步 |
+| 播报后等待 | **1秒**再继续 |
+
+#### VAD参数调整
+
+```typescript
+extraParams: {
+  timeout: timeout,           // 总超时时间
+  vadBegin: 5000,             // 等待开始说话：5秒
+  vadEnd: 3000,               // 说话结束后等待：3秒（防止老人继续说）
+  maxAudioDuration: 60000     // 最大录音时长：60秒
+}
+```
+
+#### TTS双重保险机制
+
+**问题根因**：`onComplete`事件可能提前触发（播放开始时而非结束时）
+
+**解决方案**：基于文本长度计算最小播放时间
+
+```typescript
+async speak(text: string): Promise<void> {
+  // 最小播放时间 = 字数 * 250ms，最少2秒
+  const minDuration = Math.max(2000, text.length * 250);
+
+  // onComplete时检查是否达到最小播放时间
+  if (elapsed < minDuration) {
+    // 提前触发，额外等待剩余时间
+    const remaining = minDuration - elapsed;
+    setTimeout(resolve, remaining);
+  } else {
+    // 正常完成，额外缓冲500ms
+    setTimeout(resolve, 500);
+  }
+}
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 2 s 496 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**

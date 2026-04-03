@@ -358,13 +358,49 @@ struct Index {
   /**
    * 显示语音提示（视觉反馈）
    */
+  /**
+   * 显示语音提示文本（不自动隐藏，需要手动调用 hidePrompt）
+   */
   private showPrompt(text: string): void {
     this.voicePrompt = text;
     this.showVoicePrompt = true;
-    // 3秒后自动隐藏
-    setTimeout(() => {
-      this.showVoicePrompt = false;
-    }, 3000);
+  }
+
+  /**
+   * 隐藏语音提示文本
+   */
+  private hidePrompt(): void {
+    this.showVoicePrompt = false;
+  }
+
+  /**
+   * 等待指定毫秒（让老人看清提示文本）
+   */
+  private waitMs(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 同步语音交互步骤：显示文本 → TTS播报 → 语音识别 → 返回结果
+   * @param promptText 提示文本
+   * @param defaultResult 默认结果
+   * @param parseMedicine 是否进行药品解析（Step 1问药品名时为true，其他步骤为false）
+   */
+  private async voiceStep(promptText: string, defaultResult: string, parseMedicine: boolean = true): Promise<string> {
+    // 1. 显示提示文本
+    this.showPrompt(promptText);
+
+    // 2. TTS 播报（文本持续显示）
+    await this.voice.speak(promptText);
+
+    // 3. 语音识别（文本持续显示，让老人看清问题）
+    const result = await this.voice.startRecognition(30000, parseMedicine);
+
+    // 4. 返回识别结果
+    if (result.text) {
+      return result.text;
+    }
+    return defaultResult;
   }
 
   /**
@@ -379,61 +415,48 @@ struct Index {
     this.isListening = true;
 
     try {
-      // Step 1: 问药品名称
+      // Step 1: 问药品名称（需要药品解析）
       this.showPrompt('请说药品名称');
       await this.voice.speak('请说药品名称');
-      let result = await this.voice.startRecognition(15000);
+      const result1 = await this.voice.startRecognition(30000, true);  // parseMedicine=true
+      this.medName = result1.medicineName || result1.text || '药品';
 
-      if (result.text) {
-        this.medName = result.medicineName || result.text;
-        this.showPrompt('好的，' + this.medName);
-        await this.voice.speak('好的，' + this.medName);
-      } else {
-        this.medName = '药品';
-        this.showPrompt('使用默认名称：药品');
-        await this.voice.speak('没听清，药品名称设为药品');
-      }
+      // Step 1 确认：显示文本 → 等待TTS播报完成 → 停留让老人看清
+      this.showPrompt('好的，' + this.medName);
+      await this.voice.speak('好的，' + this.medName);
+      await this.waitMs(1000);
 
-      // Step 2: 问一天吃几次
-      this.showPrompt('一天吃几次？');
-      await this.voice.speak('一天吃几次？');
-      result = await this.voice.startRecognition(15000);
+      // Step 2: 问一天吃几次（不需要药品解析）
+      let resultText = await this.voiceStep('一天吃几次？', '一天一次', false);  // parseMedicine=false
+      console.info('[Index] Step2 ASR result: ' + resultText);
+      this.medFrequency = this.parseFrequencyFromText(resultText);
+      console.info('[Index] Step2 parsed frequency: ' + this.medFrequency);
 
-      if (result.text) {
-        this.medFrequency = this.parseFrequencyFromText(result.text);
-        this.showPrompt('好的，' + this.medFrequency);
-        await this.voice.speak('好的，' + this.medFrequency);
-      } else {
-        this.medFrequency = '一天一次';
-        this.showPrompt('默认：一天一次');
-        await this.voice.speak('没听清，默认一天一次');
-      }
+      // Step 2 确认
+      this.showPrompt('好的，' + this.medFrequency);
+      await this.voice.speak('好的，' + this.medFrequency);
+      await this.waitMs(1000);
 
-      // Step 3: 问一次吃多少
-      this.showPrompt('一次吃多少？');
-      await this.voice.speak('一次吃多少？');
-      result = await this.voice.startRecognition(15000);
+      // Step 3: 问一次吃多少（不需要药品解析）
+      resultText = await this.voiceStep('一次吃多少？', '1片', false);  // parseMedicine=false
+      this.medDosage = this.parseDosageFromText(resultText);
 
-      if (result.text) {
-        this.medDosage = this.parseDosageFromText(result.text);
-        this.showPrompt('好的，一次' + this.medDosage);
-        await this.voice.speak('好的，一次' + this.medDosage);
-      } else {
-        this.medDosage = '1片';
-        this.showPrompt('默认：一次1片');
-        await this.voice.speak('没听清，默认一次一片');
-      }
+      // Step 3 确认
+      this.showPrompt('好的，一次' + this.medDosage);
+      await this.voice.speak('好的，一次' + this.medDosage);
+      await this.waitMs(1000);
 
-      // Step 4: 确认并创建提醒
+      // Step 4: 最终确认并创建提醒
       const times = this.resolveTimesFromFrequency(this.medFrequency);
       const confirmMsg = '已设置 ' + this.medName + '，' + this.medFrequency +
                          (times.length > 1 ? '' : '，' + times[0] + '提醒') +
                          '，每次' + this.medDosage;
 
+      // 最终确认：显示文本 → 等待TTS完成 → 创建提醒 → 额外停留
       this.showPrompt(confirmMsg);
-      await this.voice.speak('好的，' + confirmMsg);
+      await this.voice.speak('好的，' + confirmMsg);  // 同步等待 TTS 完成
 
-      // 为每个时间点创建提醒
+      // 创建提醒（文本持续显示）
       for (let i = 0; i < times.length; i++) {
         const t = times[i];
         try {
@@ -444,21 +467,18 @@ struct Index {
         }
       }
 
+      // 刷新列表
+      await this.loadList();
+
+      // 播报完成后额外等待1秒
+      await this.waitMs(1000);
+      this.hidePrompt();
+
       // 清空临时数据
       this.medName = '';
       this.medImage = '';
       this.medFrequency = '';
       this.medDosage = '';
-
-      // 刷新列表
-      await this.loadList();
-      this.medName = '';
-      this.medImage = '';
-      this.medFrequency = '';
-      this.medDosage = '';
-
-      // 刷新列表
-      await this.loadList();
 
     } catch (e) {
       console.error('[Index] Voice dialog failed: ' + JSON.stringify(e));
@@ -472,52 +492,113 @@ struct Index {
    * 从语音文本解析频率
    */
   private parseFrequencyFromText(text: string): string {
-    if (text.includes('三次') || text.includes('3次')) {
-      return '一天三次';
-    }
-    if (text.includes('两次') || text.includes('2次') || text.includes('两回')) {
+    console.info('[Index] parseFrequencyFromText input: ' + text);
+
+    // ASR常见误识别优先处理
+    // "三例" - 用户说"两次"时ASR常见误识别
+    if (text.includes('三例') || text.includes('三类')) {
+      console.info('[Index] Matched: 两次 (ASR误识别: 三例/三类)');
       return '一天两次';
     }
-    if (text.includes('一次') || text.includes('1次') || text.includes('一回')) {
+
+    // 三次：支持多种表达和ASR误识别
+    // 正常: "三次"、"3次"、"三回"
+    // 简短: "三"、"3"
+    // ASR误识别: "安次"、"散次"（"三"的同音字误识别）
+    if (text.includes('三次') || text.includes('3次') || text.includes('三回') ||
+        text.includes('安次') || text.includes('散次') || text.includes('伞次') ||
+        text === '三' || text === '3' || text === '三个' || text === '三遍' ||
+        /安.*次/.test(text) || /散.*次/.test(text) || /伞.*次/.test(text)) {
+      console.info('[Index] Matched: 三次');
+      return '一天三次';
+    }
+
+    // 两次：支持多种表达和ASR误识别
+    // 正常: "两次"、"2次"、"两回"
+    // 简短: "两"、"2"、"二"
+    // ASR误识别: "两类"、"两力"、"俩次"
+    if (text.includes('两次') || text.includes('2次') || text.includes('两回') ||
+        text.includes('二次') || text.includes('二回') ||
+        text.includes('两类') || text.includes('两力') || text.includes('两立') ||
+        text.includes('俩次') || text.includes('俩例') ||
+        text === '两' || text === '2' || text === '二' ||
+        text === '俩' || text === '两个' || text === '两遍' ||
+        /2.*次/.test(text) || /两.*次/.test(text) || /二.*次/.test(text)) {
+      console.info('[Index] Matched: 两次');
+      return '一天两次';
+    }
+
+    // 一次：支持多种表达
+    // 正常: "一次"、"1次"、"一回"
+    // 简短: "一"、"1"
+    // ASR误识别: "依次"、"医次"
+    if (text.includes('一次') || text.includes('1次') || text.includes('一回') ||
+        text.includes('依次') || text.includes('医次') ||
+        text === '一' || text === '1' || text === '一个' || text === '一遍') {
+      console.info('[Index] Matched: 一次');
       return '一天一次';
     }
+
     // 默认
+    console.info('[Index] No match, using default: 一天一次');
     return '一天一次';
   }
 
   /**
-   * 从语音文本解析剂量
+   * 从语音文本解析剂量（统一输出阿拉伯数字）
    */
   private parseDosageFromText(text: string): string {
-    // 定义匹配模式接口
-    interface DosagePattern {
-      pattern: RegExp;
-      value: string;
+    console.info('[Index] parseDosageFromText input: ' + text);
+
+    // 中文数字到阿拉伯数字的映射
+    const chineseToNumber: Record<string, string> = {
+      '半': '0.5', '一': '1', '二': '2', '两': '2', '三': '3', '四': '4', '五': '5',
+      '六': '6', '七': '7', '八': '8', '九': '9', '十': '10'
+    };
+
+    // 支持的单位
+    const units = ['片', '颗', '粒', '袋', '包', '勺', '支', '丸', '滴', '个', '瓶'];
+
+    // 0. ASR常见误识别优先处理
+    // "例" → 可能是"两粒"的误识别
+    // "力" → 可能是"两粒"的误识别
+    if (text === '例' || text === '两例' || text === '三例') {
+      console.info('[Index] Matched: 2粒 (ASR误识别)');
+      return '2粒';
+    }
+    if (text.includes('力') && !text.includes('粒')) {
+      console.info('[Index] Matched: 2粒 (ASR误识别: 力)');
+      return '2粒';
     }
 
-    // 匹配各种剂量表达
-    const patterns: DosagePattern[] = [
-      { pattern: /半片/, value: '半片' },
-      { pattern: /一片|1片|一粒|1粒/, value: '1片' },
-      { pattern: /两片|2片|两粒|2粒/, value: '2片' },
-      { pattern: /三片|3片|三粒|3粒/, value: '3片' },
-      { pattern: /四片|4片|四粒|4粒/, value: '4片' },
-      { pattern: /一袋|1袋/, value: '1袋' },
-      { pattern: /两袋|2袋/, value: '2袋' },
-      { pattern: /一勺|1勺/, value: '1勺' },
-      { pattern: /两勺|2勺/, value: '2勺' }
-    ];
+    // 1. 匹配 "数字+单位" 格式（已经是阿拉伯数字）
+    const digitMatch = text.match(/(\d+(?:\.\d+)?)\s*(片|颗|粒|袋|包|勺|支|丸|滴|个|瓶)/);
+    if (digitMatch) {
+      return digitMatch[1] + digitMatch[2];
+    }
 
-    for (const p of patterns) {
-      if (p.pattern.test(text)) {
-        return p.value;
+    // 2. 匹配 "中文数字+单位" 格式
+    const chineseNums = ['半', '一', '二', '两', '三', '四', '五', '六', '七', '八', '九', '十'];
+    for (const unit of units) {
+      for (const cn of chineseNums) {
+        if (text.includes(cn + unit)) {
+          return chineseToNumber[cn] + unit;
+        }
       }
     }
 
-    // 尝试提取数字+单位
-    const match = text.match(/(\d+|一|二|三|四|五)(片|粒|袋|勺|颗)/);
-    if (match) {
-      return match[0];
+    // 3. 匹配 "半" 开头的
+    if (text.includes('半片')) return '0.5片';
+    if (text.includes('半颗')) return '0.5颗';
+    if (text.includes('半粒')) return '0.5粒';
+    if (text.includes('半袋')) return '0.5袋';
+
+    // 4. 用户只说数字没有单位（如"两个"、"三个"）
+    for (const cn of chineseNums) {
+      if (text === cn || text === cn + '个') {
+        console.info('[Index] Matched: ' + chineseToNumber[cn] + '片 (无单位默认)');
+        return chineseToNumber[cn] + '片';
+      }
     }
 
     return '1片';
@@ -539,29 +620,18 @@ struct Index {
   }
 
   /**
-   * 长按拍照按钮触发语音识别
+   * 长按拍照按钮触发语音识别（多轮对话流程）
    */
   private async startVoiceInput(): Promise<void> {
     if (this.isListening) return;
-    this.isListening = true;
     this.vib(100);  // 震动提示开始录音
 
-    try {
-      await this.voice.speak('请说药品名称和时间');
+    // 长按没有图片，清空 medImage
+    this.medImage = '';
 
-      const result = await this.voice.startRecognition(30000);
-
-      if (result.success && result.medicineName) {
-        await this.processVoiceResult(result);
-      } else if (result.error !== '取消') {
-        await this.voice.speak(result.error || '没有听清，请重试');
-      }
-    } catch (e) {
-      console.error('[Index] Voice input failed: ' + JSON.stringify(e));
-      await this.voice.speak('语音识别失败，请重试');
-    }
-
-    this.isListening = false;
+    // 使用和点击拍照相同的多轮对话流程
+    // 注意：isListening 由 startVoiceDialogFlow 内部管理
+    await this.startVoiceDialogFlow();
   }
 
   /**
@@ -668,6 +738,22 @@ struct Index {
     this.deleteId = '';
   }
 
+  /**
+   * 根据药品名称字数动态调整字号
+   * ≤4 字: 34px
+   * 5-6 字: 28px
+   * 7-8 字: 24px
+   * >8 字: 20px
+   */
+  private getMedicineNameFontSize(name: string): number {
+    const len = name.length;
+    if (len <= 4) return 34;
+    if (len <= 6) return 28;
+    if (len <= 8) return 22;   // 7-8字：22px（进一步减小）
+    if (len <= 10) return 18;  // 9-10字：18px
+    return 16;                 // >10字：16px（最小字号）
+  }
+
   private vib(ms: number): void {
     try { vibrator.vibrate(ms); } catch (e) {}
   }
@@ -731,7 +817,7 @@ struct Index {
         // 名称右下 + 剂量在下，与图片间距10px
         Column({ space: 8 }) {
           Text(r.medicineName)
-            .fontSize(34)
+            .fontSize(this.getMedicineNameFontSize(r.medicineName))
             .fontColor(COLORS.textBlack)
           Text(r.dosage)
             .fontSize(25)
