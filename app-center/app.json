@@ -4,16 +4,6 @@
   "bundleName": "com.zerows.appcenter",
   "moduleName": "entry",
   "abilityName": "EntryAbility",
-  "dependsOn": [
-    "app-monitor",
-    "app-security",
-    "app-hello",
-    "app-medication"
-  ],
-  "launchTargets": [
-    "app-monitor",
-    "app-security",
-    "app-hello",
-    "app-medication"
-  ]
+  "dependsOn": [],
+  "launchTargets": []
 }

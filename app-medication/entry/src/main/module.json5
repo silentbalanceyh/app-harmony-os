@@ -70,13 +70,7 @@
         "launchType": "singleton",
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
-        "exported": true,
-        "metadata": [
-          {
-            "name": "ohos.ability.shortcuts",
-            "resource": "$profile:desktop_shortcuts"
-          }
-        ]
+        "exported": true
       }
     ],
     "extensionAbilities": [

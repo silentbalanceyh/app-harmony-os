@@ -1,0 +1,149 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775083308486,
+  "projectRoot": "/Users/lang/zero-cloud/app-zero/r2mo-apps/app-harmony-os",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs"
+    ],
+    "gitBranches": {
+      "defaultBranch": "master",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "app-center": {
+      "path": "app-center",
+      "purpose": null,
+      "fileCount": 17,
+      "lastAccessed": 1775083308472,
+      "keyFiles": [
+        "app.json",
+        "build-profile.json5",
+        "code-linter.json5",
+        "dev-build.bat",
+        "dev-build.sh"
+      ]
+    },
+    "app-hello": {
+      "path": "app-hello",
+      "purpose": null,
+      "fileCount": 14,
+      "lastAccessed": 1775083308472,
+      "keyFiles": [
+        "app.json",
+        "build-profile.json5",
+        "code-linter.json5",
+        "dev-build.bat",
+        "dev-build.sh"
+      ]
+    },
+    "app-medication": {
+      "path": "app-medication",
+      "purpose": null,
+      "fileCount": 11,
+      "lastAccessed": 1775083308472,
+      "keyFiles": [
+        "REQ.md",
+        "app.json",
+        "build-profile.json5",
+        "code-linter.json5",
+        "dev-build.sh"
+      ]
+    },
+    "app-monitor": {
+      "path": "app-monitor",
+      "purpose": null,
+      "fileCount": 14,
+      "lastAccessed": 1775083308473,
+      "keyFiles": [
+        "app.json",
+        "build-profile.json5",
+        "code-linter.json5",
+        "dev-build.bat",
+        "dev-build.sh"
+      ]
+    },
+    "app-security": {
+      "path": "app-security",
+      "purpose": null,
+      "fileCount": 14,
+      "lastAccessed": 1775083308473,
+      "keyFiles": [
+        "app.json",
+        "build-profile.json5",
+        "code-linter.json5",
+        "dev-build.bat",
+        "dev-build.sh"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1775083308473,
+      "keyFiles": [
+        "windows-env-setup.md"
+      ]
+    },
+    "app-center/build": {
+      "path": "app-center/build",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1775083308473,
+      "keyFiles": []
+    },
+    "app-hello/build": {
+      "path": "app-hello/build",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1775083308473,
+      "keyFiles": []
+    },
+    "app-medication/build": {
+      "path": "app-medication/build",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1775083308474,
+      "keyFiles": []
+    },
+    "app-monitor/build": {
+      "path": "app-monitor/build",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1775083308474,
+      "keyFiles": []
+    },
+    "app-security/build": {
+      "path": "app-security/build",
+      "purpose": "Build output",
+      "fileCount": 0,
+      "lastAccessed": 1775083308474,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

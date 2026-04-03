@@ -2,11 +2,11 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "应用中心模块"
+      "value": "企业应用中心模块"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "应用中心启动能力"
+      "value": "企业应用中心启动能力"
     },
     {
       "name": "EntryAbility_label",
