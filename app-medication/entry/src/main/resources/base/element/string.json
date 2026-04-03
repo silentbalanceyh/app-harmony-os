@@ -11,6 +11,30 @@
     {
       "name": "EntryAbility_label",
       "value": "用药提醒"
+    },
+    {
+      "name": "permission_camera_reason",
+      "value": "用于拍照识别药盒信息，自动添加用药提醒"
+    },
+    {
+      "name": "permission_microphone_reason",
+      "value": "用于语音交互，支持语音设置和查询用药提醒"
+    },
+    {
+      "name": "permission_vibrate_reason",
+      "value": "用于操作反馈和提醒震动提示"
+    },
+    {
+      "name": "permission_read_media_reason",
+      "value": "用于读取药品图片，展示在提醒卡片中"
+    },
+    {
+      "name": "permission_write_media_reason",
+      "value": "用于保存拍摄的药品图片"
+    },
+    {
+      "name": "permission_reminder_reason",
+      "value": "用于系统级用药提醒，确保提醒准时到达"
     }
   ]
 }
