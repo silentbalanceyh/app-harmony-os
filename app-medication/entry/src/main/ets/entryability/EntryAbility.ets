@@ -3,6 +3,10 @@ import AbilityConstant from '@ohos.app.ability.AbilityConstant';
 import Want from '@ohos.app.ability.Want';
 import shortcutManager from '@ohos.bundle.shortcutManager';
 import window from '@ohos.window';
+import { reminderStore } from '../services/ReminderStore';
+import { voiceService } from '../services/VoiceService';
+import { cameraOcrService } from '../services/CameraOcrService';
+import { strongReminderService } from '../services/StrongReminderService';
 
 const SHORTCUT_ID: string = 'desktop-entry';
 const COMMAND_SET_SHORTCUT_VISIBLE: string = 'set-shortcut-visible';
@@ -17,21 +21,44 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy() {
     console.info('app-medication EntryAbility onDestroy');
+    void voiceService.destroy();
+    void cameraOcrService.destroy();
+    void strongReminderService.destroy();
   }
 
   onWindowStageCreate(windowStage: window.WindowStage) {
     console.info('app-medication EntryAbility onWindowStageCreate');
     if (this.shouldSkipInitialPage) {
-      console.info('app-medication EntryAbility skip page load for command dispatch');
+      console.info('app-medication skip page load for command dispatch');
       return;
     }
+
+    void this.initServices();
+
     windowStage.loadContent('pages/Index', (err, data) => {
       if (err.code) {
-        console.error('Failed to load app-medication content. Cause: ' + JSON.stringify(err));
+        console.error('Failed to load content: ' + JSON.stringify(err));
         return;
       }
-      console.info('Succeeded in loading app-medication content. Data: ' + JSON.stringify(data));
+      console.info('Succeeded in loading content: ' + JSON.stringify(data));
     });
+  }
+
+  private async initServices(): Promise<void> {
+    try {
+      await reminderStore.init(this.context);
+      console.info('app-medication ReminderStore initialized');
+
+      await cameraOcrService.init(this.context);
+      console.info('app-medication CameraOcrService initialized');
+
+      await strongReminderService.init(this.context, reminderStore);
+      console.info('app-medication StrongReminderService initialized');
+
+      console.info('app-medication All services initialized');
+    } catch (err) {
+      console.error('app-medication Init services failed: ' + JSON.stringify(err));
+    }
   }
 
   onWindowStageDestroy() {
