@@ -14,15 +14,11 @@ interface ManagedApp {
   iconBgColor: string;
   iconStrokeColor: string;
   installed: boolean;
-  canUninstall: boolean;
-  showOnDesktop: boolean;
-  supportsInstallOnDemand: boolean;
+  stylePreset: number;
 }
 
-const INSTALL_ON_DEMAND_FLAG: number = wantConstant.Flags.FLAG_INSTALL_ON_DEMAND;
 const START_WITHOUT_TIPS_FLAG: number = wantConstant.Flags.FLAG_START_WITHOUT_TIPS;
 const COMMAND_OPEN_ENTRY: string = 'open-entry';
-const COMMAND_SET_SHORTCUT_VISIBLE: string = 'set-shortcut-visible';
 const LAUNCH_SOUND_FILE: string = 'launch.wav';
 
 @Entry
@@ -39,10 +35,8 @@ struct Index {
       icon: $r('app.media.ic_app_monitor'),
       iconBgColor: '#DBEAFE',
       iconStrokeColor: '#2563EB',
-      installed: false,
-      canUninstall: true,
-      showOnDesktop: false,
-      supportsInstallOnDemand: true
+      installed: true,
+      stylePreset: 0
     },
     {
       id: 'app-security',
@@ -53,10 +47,8 @@ struct Index {
       icon: $r('app.media.ic_app_security'),
       iconBgColor: '#FEF3C7',
       iconStrokeColor: '#D97706',
-      installed: false,
-      canUninstall: true,
-      showOnDesktop: true,
-      supportsInstallOnDemand: true
+      installed: true,
+      stylePreset: 1
     },
     {
       id: 'app-hello',
@@ -67,10 +59,8 @@ struct Index {
       icon: $r('app.media.ic_app_hello'),
       iconBgColor: '#FCE7F3',
       iconStrokeColor: '#DB2777',
-      installed: false,
-      canUninstall: true,
-      showOnDesktop: false,
-      supportsInstallOnDemand: true
+      installed: true,
+      stylePreset: 2
     },
     {
       id: 'app-medication',
@@ -81,10 +71,8 @@ struct Index {
       icon: $r('app.media.ic_app_medication'),
       iconBgColor: '#D1FAE5',
       iconStrokeColor: '#059669',
-      installed: false,
-      canUninstall: true,
-      showOnDesktop: false,
-      supportsInstallOnDemand: true
+      installed: true,
+      stylePreset: 0
     }
   ];
   @State private isRefreshing: boolean = false;
@@ -115,12 +103,10 @@ struct Index {
         moduleName: item.moduleName,
         abilityName: item.abilityName,
         icon: item.icon,
-        iconBgColor: item.iconBgColor,
-        iconStrokeColor: item.iconStrokeColor,
+        iconBgColor: updates.iconBgColor !== undefined ? updates.iconBgColor : item.iconBgColor,
+        iconStrokeColor: updates.iconStrokeColor !== undefined ? updates.iconStrokeColor : item.iconStrokeColor,
         installed: updates.installed !== undefined ? updates.installed : item.installed,
-        canUninstall: item.canUninstall,
-        showOnDesktop: updates.showOnDesktop !== undefined ? updates.showOnDesktop : item.showOnDesktop,
-        supportsInstallOnDemand: item.supportsInstallOnDemand
+        stylePreset: updates.stylePreset !== undefined ? updates.stylePreset : item.stylePreset
       };
     });
   }
@@ -141,6 +127,19 @@ struct Index {
     });
   }
 
+  private async checkInstalledWithRetry(bundleName: string): Promise<boolean> {
+    const first = await this.isBundleInstalled(bundleName);
+    if (first) {
+      return true;
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(() => {
+        resolve();
+      }, 300);
+    });
+    return this.isBundleInstalled(bundleName);
+  }
+
   private async refreshInstalledState(): Promise<void> {
     if (this.isRefreshing) {
       return;
@@ -149,7 +148,7 @@ struct Index {
     try {
       for (let index = 0; index < this.apps.length; index += 1) {
         const current = this.apps[index];
-        const installed = await this.isBundleInstalled(current.bundleName);
+        const installed = await this.checkInstalledWithRetry(current.bundleName);
         this.updateApp(current.id, { installed });
       }
     } finally {
@@ -177,43 +176,6 @@ struct Index {
     };
   }
 
-  private buildShortcutWant(target: ManagedApp, visible: boolean): Want {
-    return {
-      bundleName: target.bundleName,
-      moduleName: target.moduleName,
-      abilityName: target.abilityName,
-      flags: START_WITHOUT_TIPS_FLAG,
-      parameters: {
-        command: COMMAND_SET_SHORTCUT_VISIBLE,
-        starterApp: 'app-center',
-        coordinationScene: 'toggle-desktop-shortcut',
-        sourceLabel: '应用中心',
-        selectedAppId: target.id,
-        startedAt: Date.now(),
-        sourceBundleName: 'com.zerows.appcenter',
-        sourceModuleName: 'entry',
-        sourceAbilityName: 'EntryAbility',
-        desktopVisible: visible ? 'true' : 'false'
-      }
-    };
-  }
-
-  private buildInstallWant(target: ManagedApp): Want {
-    return {
-      bundleName: target.bundleName,
-      moduleName: target.moduleName,
-      abilityName: target.abilityName,
-      flags: START_WITHOUT_TIPS_FLAG | INSTALL_ON_DEMAND_FLAG,
-      parameters: {
-        starterApp: 'app-center',
-        coordinationScene: 'install-on-demand',
-        sourceLabel: '应用中心',
-        selectedAppId: target.id,
-        startedAt: Date.now()
-      }
-    };
-  }
-
   private async playLaunchSound(): Promise<void> {
     await this.soundEffectPlayer.play(this.getAbilityContext(), LAUNCH_SOUND_FILE);
   }
@@ -221,40 +183,30 @@ struct Index {
   private async openManagedApp(target: ManagedApp): Promise<void> {
     try {
       await this.getAbilityContext().startAbility(this.buildEntryWant(target));
-      this.updateApp(target.id, { installed: true });
     } catch (err) {
       console.error('Open app failed: ' + JSON.stringify(err));
     }
   }
 
-  private async installOnDemand(target: ManagedApp): Promise<void> {
-    if (!target.supportsInstallOnDemand) {
+  private async handleAppClick(target: ManagedApp): Promise<void> {
+    if (!target.installed) {
       return;
     }
-    try {
-      await this.getAbilityContext().startAbility(this.buildInstallWant(target));
-    } catch (err) {
-      console.error('Install on demand failed: ' + JSON.stringify(err));
-    }
+    await this.playLaunchSound();
+    await this.openManagedApp(target);
   }
 
-  private async setDesktopVisibility(target: ManagedApp, visible: boolean): Promise<void> {
-    try {
-      await this.getAbilityContext().startAbility(this.buildShortcutWant(target, visible));
-      this.updateApp(target.id, { showOnDesktop: visible });
-    } catch (err) {
-      console.error('Set desktop shortcut failed: ' + JSON.stringify(err));
+  private cycleStyle(app: ManagedApp): void {
+    const nextPreset: number = (app.stylePreset + 1) % 3;
+    if (nextPreset === 0) {
+      this.updateApp(app.id, { stylePreset: nextPreset, iconBgColor: '#DBEAFE', iconStrokeColor: '#2563EB' });
+      return;
     }
-  }
-
-  private async handleAppClick(target: ManagedApp): Promise<void> {
-    if (target.installed) {
-      await this.playLaunchSound();
-      await this.openManagedApp(target);
-    } else {
-      await this.installOnDemand(target);
+    if (nextPreset === 1) {
+      this.updateApp(app.id, { stylePreset: nextPreset, iconBgColor: '#FCE7F3', iconStrokeColor: '#DB2777' });
+      return;
     }
-    await this.refreshInstalledState();
+    this.updateApp(app.id, { stylePreset: nextPreset, iconBgColor: '#D1FAE5', iconStrokeColor: '#059669' });
   }
 
   @Builder
@@ -331,32 +283,29 @@ struct Index {
       ForEach(this.apps, (app: ManagedApp) => {
         ListItem() {
           Row({ space: 14 }) {
-            this.buildAppIcon(app, 48, 26)
+            this.buildAppIcon(app, 48, 28)
 
             Column({ space: 2 }) {
               Text(app.label)
                 .fontSize(16)
                 .fontWeight(FontWeight.Medium)
                 .fontColor('#111827')
-
-              Text(app.installed ? '已安装' : '尚未安装')
+              Text(app.installed ? '已安装' : '未安装')
                 .fontSize(12)
                 .fontColor(app.installed ? '#667085' : '#9CA3AF')
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
-            if (!app.installed) {
-              Text('安装')
-                .fontSize(12)
-                .fontColor('#2563EB')
-                .padding({ left: 12, right: 12, top: 5, bottom: 5 })
-                .borderRadius(999)
-                .backgroundColor('#DBEAFE')
-                .onClick(() => {
-                  void this.installOnDemand(app);
-                })
-            }
+            Text('换风格')
+              .fontSize(12)
+              .fontColor('#2563EB')
+              .padding({ left: 12, right: 12, top: 5, bottom: 5 })
+              .borderRadius(999)
+              .backgroundColor('#DBEAFE')
+              .onClick(() => {
+                this.cycleStyle(app);
+              })
           }
           .width('100%')
           .padding({ left: 16, right: 16, top: 12, bottom: 12 })
