@@ -52,11 +52,19 @@
         }
       },
       {
-        "name": "ohos.permission.PUBLISH_AGENT_REMINDER",
+      "name": "ohos.permission.PUBLISH_AGENT_REMINDER",
         "reason": "$string:permission_reminder_reason",
         "usedScene": {
           "abilities": ["EntryAbility"],
           "when": "inuse"
+        }
+      },
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING",
+        "reason": "$string:permission_background_reason",
+        "usedScene": {
+          "abilities": ["EntryAbility"],
+          "when": "always"
         }
       }
     ],
@@ -71,6 +79,13 @@
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
         "exported": true,
+        "backgroundModes": ["dataTransfer", "multiDeviceConnection"],
+        "skills": [
+          {
+            "entities": ["entity.system.home"],
+            "actions": ["action.system.home"]
+          }
+        ],
         "metadata": [
           {
             "name": "ohos.ability.shortcuts",

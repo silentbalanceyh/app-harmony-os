@@ -35,6 +35,14 @@
     {
       "name": "permission_reminder_reason",
       "value": "用于系统级用药提醒，确保提醒准时到达"
+    },
+    {
+      "name": "permission_background_reason",
+      "value": "用于后台运行提醒服务，确保用药提醒准时提醒"
+    },
+    {
+      "name": "permission_notification_reason",
+      "value": "用于发送用药提醒通知，确保您按时服药"
     }
   ]
 }

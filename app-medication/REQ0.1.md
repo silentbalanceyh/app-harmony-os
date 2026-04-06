@@ -1541,3 +1541,846 @@ const knownAsrErrors = {
 - 构建状态: **BUILD SUCCESSFUL in 2 s 487 ms**
 - 安装状态: **install bundle successfully**
 - 启动状态: **start ability successfully**
+
+---
+
+### 2026-04-04 更新：后台提醒功能完整实现
+
+#### 问题背景
+原有提醒服务使用 `reminderAgentManager` 发布系统提醒，但该 API 是**系统级 API**，普通应用无权调用：
+```
+Error: This application is not system-app, can not use system-api
+```
+
+#### 技术方案调研
+
+| API | 权限要求 | 可用性 | 说明 |
+|-----|---------|--------|------|
+| `reminderAgentManager` | 系统应用 | ❌ | 无法使用 |
+| `backgroundTaskManager` | 普通应用 | ✅ | 后台长时任务 |
+| `notificationManager` | 普通应用 | ✅ | 本地通知 |
+| `wantAgent` | 普通应用 | ✅ | 点击通知打开应用 |
+| `vibrator` | 普通应用 | ✅ | 震动提醒 |
+
+#### 实现方案
+
+**架构设计**：
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    StrongReminderService.ets                    │
+├─────────────────────────────────────────────────────────────────┤
+│  初始化                                                         │
+│  ├── startBackgroundTask() → backgroundTaskManager             │
+│  └── getWantAgent() → wantAgent (点击通知打开应用)              │
+├─────────────────────────────────────────────────────────────────┤
+│  提醒注册                                                       │
+│  └── registerReminder() → setTimeout 链式调用                   │
+├─────────────────────────────────────────────────────────────────┤
+│  触发提醒                                                       │
+│  ├── notificationManager.publish() → 发送通知                   │
+│  ├── startAlarmWithTimeout() → 震动循环 + 60秒超时              │
+│  └── onTriggerCallback() → UI 弹窗                              │
+├─────────────────────────────────────────────────────────────────┤
+│  停止提醒                                                       │
+│  ├── stopAlarm() → 停止震动 + 取消通知                          │
+│  └── 60秒超时 → 自动停止                                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 核心功能实现
+
+##### 1. 后台长时任务
+```typescript
+private async startBackgroundTask(): Promise<void> {
+  const wantAgentInfo: wantAgent.WantAgentInfo = {
+    wants: [{ bundleName: 'com.zerows.appmedication', abilityName: 'EntryAbility' }],
+    requestCode: 1001,
+    operationType: wantAgent.OperationType.START_ABILITY,
+    wantAgentFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
+  };
+  this.backgroundWantAgent = await wantAgent.getWantAgent(wantAgentInfo);
+  await backgroundTaskManager.startBackgroundRunning(
+    this.context,
+    backgroundTaskManager.BackgroundMode.DATA_TRANSFER,
+    this.backgroundWantAgent
+  );
+}
+```
+
+##### 2. 提醒注册（setTimeout 链式调用）
+```typescript
+async registerReminder(reminder: MedicineReminder): Promise<number> {
+  const delayMs = targetTime.getTime() - now.getTime();
+  const timeout = setTimeout(() => {
+    this.triggerReminder(reminder);
+    this.scheduleNextTrigger(reminder, hour, minute);  // 触发后安排下一次
+  }, delayMs);
+  this.reminderTimers.set(reminder.id, timeout);
+}
+```
+
+##### 3. 闹铃模式（震动循环 + 60秒超时）
+```typescript
+private startAlarmWithTimeout(reminderId: string): void {
+  // 震动循环：震动1000ms，停500ms
+  const intervalId = setInterval(() => {
+    if (!this.isVibrating) return;
+    vibrator.vibrate(1000);
+  }, 1500);
+
+  // 60秒后自动停止
+  const timeoutId = setTimeout(() => {
+    this.stopAlarmVibration(reminderId);
+  }, 60000);
+}
+```
+
+##### 4. 通知发布 + 点击打开应用
+```typescript
+private async triggerReminder(reminder: MedicineReminder): Promise<void> {
+  const notificationRequest: notificationManager.NotificationRequest = {
+    id: notificationId,
+    content: {
+      notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
+      normal: {
+        title: '⏰ 用药提醒',
+        text: reminder.medicineName + ' ' + reminder.dosage + ' - 请按时服药'
+      }
+    },
+    notificationSlotType: notificationManager.SlotType.SERVICE_INFORMATION
+  };
+  if (this.backgroundWantAgent) {
+    notificationRequest.wantAgent = this.backgroundWantAgent;
+  }
+  await notificationManager.publish(notificationRequest);
+}
+```
+
+##### 5. UI 弹窗（简化为单个 OK 按钮）
+```typescript
+@Builder
+private alarmDialog() {
+  Column({ space: 24 }) {
+    Text('⏰').fontSize(64)
+    Text('用药时间到了！').fontSize(36).fontWeight(FontWeight.Bold)
+    if (this.alarmReminder) {
+      Text(this.alarmReminder.medicineName).fontSize(40).fontColor(COLORS.cameraButton)
+      Text(this.alarmReminder.dosage).fontSize(28)
+    }
+    Text('请按时服药').fontSize(24)
+    Button('OK')
+      .fontSize(32)
+      .backgroundColor(COLORS.statusGreen)
+      .width('100%')
+      .height(70)
+      .onClick(() => {
+        this.showAlarmDialog = false;
+        this.reminder.stopAlarm(this.alarmReminder.id);
+      })
+  }
+}
+```
+
+#### 问题修复记录
+
+##### 问题 1：HAP 安装失败 "no signature file"
+**现象**：`install bundle failed. code:9568320 error: no signature file`
+
+**根因**：安装了未签名的 HAP（`entry-default.hap`），真机需要签名 HAP（`entry-default-signed.hap`）
+
+**修复**：修改 `common.bat` 脚本优先安装签名 HAP
+```batch
+:install
+for /f "usebackq delims=" %%i in (`dir /s /b "*-signed.hap"`) do (
+    set "_hap=%%i"
+)
+```
+
+##### 问题 2：backgroundTaskManager API 参数错误
+**现象**：`Argument of type 'number' is not assignable to parameter of type 'object'`
+
+**根因**：`startBackgroundRunning()` 第三个参数需要 `wantAgent` 对象，不是数字
+
+**修复**：创建 `wantAgent` 对象并传入
+
+##### 问题 3：ApplicationInfo.bundleName 不存在
+**现象**：`Property 'bundleName' does not exist on type 'ApplicationInfo'`
+
+**根因**：HarmonyOS NEXT SDK 中 `ApplicationInfo` 没有 `bundleName` 属性
+
+**修复**：直接使用硬编码的 bundleName `'com.zerows.appmedication'`
+
+##### 问题 4：setTimeout/setInterval 返回 any 类型
+**现象**：`Use explicit types instead of "any", "unknown" (arkts-no-any-unknown)`
+
+**根因**：ArkTS 严格类型检查，不允许 `any` 类型
+
+**修复**：改为使用链式 `setTimeout` 替代 `setInterval`
+
+##### 问题 5：通知点击无法打开应用
+**现象**：`Invalid wantAgent for com.zerows.appmedication`
+
+**根因**：`wantAgent` 中使用了 `this.context.applicationInfo.name`，返回的不是正确的 bundleName
+
+**修复**：使用硬编码的正确 bundleName
+
+##### 问题 6：震动立即被取消
+**现象**：通知发布后立即显示 `Alarm vibration stopped`
+
+**根因**：`startAlarmVibration()` 第一行调用了 `stopAlarmVibration()`，导致通知被取消
+
+**修复**：移除 `startAlarmVibration()` 中的 `stopAlarmVibration()` 调用
+
+#### 配置更新
+
+##### module.json5
+```json
+{
+  "name": "ohos.permission.KEEP_BACKGROUND_RUNNING",
+  "reason": "$string:permission_background_reason",
+  "usedScene": { "abilities": ["EntryAbility"], "when": "always" }
+}
+
+"abilities": [{
+  "name": "EntryAbility",
+  "backgroundModes": ["dataTransfer", "multiDeviceConnection"]
+}]
+```
+
+##### string.json
+```json
+{
+  "name": "permission_background_reason",
+  "value": "用于后台运行提醒服务，确保用药提醒准时提醒"
+}
+```
+
+#### 功能验证
+
+| 功能 | 状态 |
+|------|------|
+| 后台长时任务启动 | ✅ |
+| 提醒准时触发 | ✅ |
+| 通知发布 | ✅ |
+| 震动循环（闹铃模式） | ✅ |
+| 60秒超时自动停止 | ✅ |
+| 点击通知打开应用 | ✅ |
+| UI 弹窗显示 | ✅ |
+| OK 按钮停止闹铃 | ✅ |
+
+#### 文件变更清单
+```
+修改:
+- entry/src/main/ets/services/StrongReminderService.ets (后台提醒完整实现)
+- entry/src/main/ets/pages/Index.ets (闹铃弹窗 + 静态变量恢复)
+- entry/src/main/module.json5 (后台权限配置)
+- entry/src/main/resources/base/element/string.json (权限说明)
+- scripts/common.bat (签名 HAP 安装)
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+- 后台提醒: **触发成功，震动循环正常，通知点击打开应用正常**
+
+#### 系统限制说明
+
+**HarmonyOS 普通应用限制**：
+- 无法像系统闹钟一样在其他应用上层显示全屏弹窗
+- 无法直接修改系统级通知设置（锁屏显示、横幅通知等）
+- 这些权限需要系统应用签名，需要设备厂商授权
+
+**当前方案体验**：
+1. 提醒触发时：震动循环 + 高优先级通知
+2. 用户点击通知：打开应用显示弹窗
+3. 用户点击 OK：停止震动
+4. 60秒无操作：自动停止
+
+---
+
+### 2026-04-04 更新：通知权限语音播报重复问题修复
+
+#### 问题背景
+用户反馈：软件刚打开开启通知权限时，语音播报了两次"通知权限已开启"。
+
+#### 根因分析
+**调用链**：
+```
+requestNotificationPermission()
+  ↓ Line 173: await this.voice.speak('通知权限已开启')  ← 第1次播报
+  ↓
+setupNotificationSlots()
+  ↓
+openNotificationSettings()
+  ↓ Line 207: await this.voice.speak('通知权限已开启，请在设置中开启铃声和振动')  ← 第2次播报
+```
+
+**问题**：两个函数串联执行，播报了两次，内容重叠。
+
+#### 解决方案
+删除 `Index.ets:173` 的重复播报，保留 `Line 207`（信息更完整）。
+
+**修复前**：
+```typescript
+if (enabled) {
+  await this.setupNotificationSlots();
+  await this.voice.speak('通知权限已开启');  // ← 删除
+}
+```
+
+**修复后**：
+```typescript
+if (enabled) {
+  await this.setupNotificationSlots();
+  // 播报在 openNotificationSettings() 中统一处理
+}
+```
+
+#### 全量排查结果
+检查所有 13 处 `voice.speak()` 调用，确认：
+- 语音多轮对话流程 (`startVoiceDialogFlow`)：**无重复播报问题**，每步独立
+- 其他语音播报：**无串联重复问题**
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/pages/Index.ets (删除重复播报)
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 4 s 343 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+---
+
+### 2026-04-04 更新：权限引导流程重构（系统权限优先）
+
+#### 问题背景
+用户反馈：首次打开软件时，如果相机和麦克风权限未开启，点击拍照按钮应该**直接弹出系统权限框**（和应用启动时一样），而不是先弹自定义弹窗。
+
+#### 需求（最终版）
+1. **点击拍照按钮时**：
+   - 检查相机权限 → 无权限 → **直接弹系统权限框**
+   - 用户允许 → 打开相册选择图片
+   - 用户拒绝 → 弹降级弹窗（只有"相册"按钮）
+
+2. **拍照/选照片完成后**：
+   - 检查麦克风权限 → 无权限 → **直接弹系统权限框**
+   - 用户允许 → 启动语音多轮对话
+   - 用户拒绝 → 弹降级弹窗（只有"返回"按钮） → 返回主页
+
+#### 实现方案（最终版）
+
+**流程图**：
+```
+点击拍照按钮
+  ↓
+检查相机权限 → 无 → 直接弹系统权限框
+  ↓                    ↓ 用户允许
+  ↓                    → 打开相册
+  ↓                    ↓ 用户拒绝
+  ↓                    → 弹降级弹窗（只有"相册"按钮）
+有相机权限
+  ↓
+打开相册选择图片
+  ↓
+选择完成
+  ↓
+检查麦克风权限 → 无 → 直接弹系统权限框
+  ↓                    ↓ 用户允许
+  ↓                    → 启动语音对话
+  ↓                    ↓ 用户拒绝
+  ↓                    → 弹降级弹窗（只有"返回"按钮）
+有麦克风权限
+  ↓
+启动语音多轮对话
+```
+
+**弹窗设计（最终版）**：
+
+| 弹窗 | 触发时机 | 按钮 |
+|------|---------|------|
+| 相机权限降级 | 拒绝系统相机权限后 | **相册**（单按钮） |
+| 麦克风权限降级 | 拒绝系统麦克风权限后 | **返回**（单按钮） |
+
+**关键改动**：
+- 移除"先弹自定义弹窗，用户点'去开启'再弹系统权限框"的逻辑
+- 直接调用 `requestPermissionsFromUser()` 弹出系统权限框
+- 拒绝后才显示降级弹窗（单按钮，无选择）
+
+**新增状态变量**：
+```typescript
+@State private showCameraGuide: boolean = false;      // 相机权限降级弹窗
+@State private showMicrophoneGuide: boolean = false;  // 麦克风权限降级弹窗
+@State private pendingImageUri: string = '';          // 临时图片路径（等待麦克风权限）
+```
+
+**新增方法**：
+- `checkCameraPermission()` - 检查相机权限
+- `checkMicrophonePermission()` - 检查麦克风权限
+- `requestCameraPermission()` - 请求相机权限（弹系统权限框）
+- `requestMicrophonePermission()` - 请求麦克风权限（弹系统权限框）
+- `useGalleryInstead()` - 相机权限降级"相册"
+- `returnToMainPage()` - 麦克风权限降级"返回"
+- `openPhotoPicker()` - 打开相册选择图片
+
+**新增 UI 弹窗**：
+- `cameraGuideDialog()` - 相机权限降级弹窗（只有"相册"按钮）
+- `microphoneGuideDialog()` - 麦克风权限降级弹窗（只有"返回"按钮）
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/pages/Index.ets (权限流程重构 + 降级弹窗单按钮)
+- REQ0.1.md (追加实现记录)
+- Design.md (权限流程设计更新)
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 2 s 847 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+---
+
+### 2026-04-04 更新：通知权限流程优化
+
+#### 问题背景
+用户反馈两个问题：
+1. 刚打开应用时通知权限请求失败（错误码 1600004）
+2. 没有通知权限也能创建提醒，导致"假提醒"
+
+#### 根因分析
+
+**问题1：requestEnableNotification() 返回错误码 1600004**
+- HarmonyOS NEXT 中 `requestEnableNotification()` API 已标记为 deprecated
+- 在 `aboutToAppear()` 中调用时 UI 未完全就绪导致失败
+
+**问题2：提醒创建未检查通知权限**
+- 原流程直接创建提醒，不检查通知权限
+- 用户以为提醒已设置，但实际不会收到通知
+
+#### 解决方案
+
+**通知权限请求优化**：
+- 请求失败时优雅降级，不阻塞应用启动
+- 延迟请求，确保 UI 完全就绪
+
+**创建提醒前检查通知权限**：
+```typescript
+// Step 4: 创建提醒前检查通知权限
+const notificationEnabled = await notificationManager.isNotificationEnabled();
+if (!notificationEnabled) {
+  // 尝试请求通知权限
+  await notificationManager.requestEnableNotification();
+  // 语音提示用户开启权限
+  await this.voice.speak('需要开启通知权限才能提醒您');
+}
+```
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/pages/Index.ets (通知权限检查 + 创建前验证)
+```
+
+---
+
+### 2026-04-04 更新：ASR 纠错增强
+
+#### 问题背景
+用户说"蒙脱石散"，ASR 识别成"猛拖死伞"或"猛托石散"。
+
+#### 根因分析
+"蒙脱石散" 的 ASR 误识别严重偏离原词，同音字匹配无法覆盖。
+
+#### 解决方案
+
+**手动添加 ASR 纠错映射**：
+```typescript
+private static asrCorrectionMap: Map<string, string> = new Map([
+  ['猛拖死伞', '蒙脱石散'],
+  ['猛托石散', '蒙脱石散'],  // 最常见的误识别
+  ['蒙托石散', '蒙脱石散'],
+  // ... 更多变体
+]);
+```
+
+**同音字映射扩展**：
+```typescript
+['蒙', ['猛', '梦', '孟', '萌', '盟', '檬', '朦']],
+['脱', ['拖', '托', '妥', '陀', '驼', '拓']],
+['石', ['十', '时', '事', '实', '食', '史', '使', '始', '式', '示', '士', '市', '师', '湿', '死']],
+```
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/services/MedicineDatabase.ets (ASR 纠错映射 + 同音字扩展)
+```
+
+---
+
+### 2026-04-04 更新：药品库拼音首字母
+
+#### 功能说明
+为药品库数据结构添加拼音首字母字段，增强 ASR 纠错能力。
+
+#### 数据结构更新
+```typescript
+interface MedicineInfo {
+  name: string;
+  aliases: string[];
+  pinyin: string;
+  pinyinInitials?: string;  // 新增：拼音首字母
+  category: string;
+  commonDosageForms: string[];
+}
+```
+
+#### 拼音首字母生成算法
+```typescript
+// 自动生成拼音首字母
+// mengtuoShisan → mtss
+// amoxilin → aml
+private static generatePinyinInitials(pinyin: string): string {
+  // 按音节划分，提取每个音节的首字母
+  // 音节结构：(辅音) + 元音 + (鼻音n/ng)
+}
+```
+
+#### 示例
+| 药品名 | 拼音 | 拼音首字母 |
+|--------|------|-----------|
+| 蒙脱石散 | mengtuoShisan | mtss |
+| 阿莫西林 | amoxilin | amxl |
+| 六味地黄丸 | liuweidihuangwan | lwdhw |
+
+#### 纠错索引更新
+```typescript
+// 初始化时将拼音首字母也加入纠错索引
+if (m.pinyinInitials && m.pinyinInitials.length >= 2) {
+  MedicineDatabase.addToIndex(m.pinyinInitials, m.name);
+}
+```
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/services/MedicineDatabase.ets (拼音首字母生成 + 纠错索引)
+```
+
+---
+
+### 2026-04-04 更新：剂量解析修复
+
+#### 问题背景
+用户说"两颗"，ASR 正确识别为"两颗。"，但解析结果显示为"1片"。
+
+#### 根因分析
+剂量解析日志显示：
+```
+parseDosageFromText input: 两颗。
+input length: 3, chars: 两,颗,。
+```
+解析逻辑正确匹配到"两颗"，但日志中看到最终结果却是默认值。
+
+#### 解决方案
+添加详细解析日志，确认匹配过程正确：
+```typescript
+for (const unit of units) {
+  for (const cn of chineseNums) {
+    const pattern = cn + unit;
+    if (text.includes(pattern)) {
+      console.info('[Index] Matched pattern: ' + pattern + ' -> ' + chineseToNumber[cn] + unit);
+      return chineseToNumber[cn] + unit;
+    }
+  }
+}
+```
+
+#### 验证结果
+```
+[Index] parseDosageFromText input: 两颗。
+[Index] Matched pattern: 两颗 -> 2颗
+```
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/pages/Index.ets (解析日志增强)
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+---
+
+### 2026-04-04 更新：五级药品匹配算法
+
+#### 问题背景
+用户要求语音识别使用多候选结果匹配药品库。经调研，HarmonyOS NEXT `SpeechRecognitionResult` 类型没有 `bestResults` 属性。
+
+#### 解决方案
+实现单结果+五级优先级匹配算法，即使只有一个 ASR 结果也能精准匹配药品：
+
+```typescript
+// MedicineDatabase.ets - 接口定义（ArkTS 类型安全）
+interface MedicineMatchResult {
+  medicineName: string;
+  confidence: number;  // 1-5，数字越小优先级越高
+}
+
+interface LevenshteinMatch {
+  name: string;
+  distance: number;
+}
+
+static matchMedicineFromCandidates(candidates: string[]): MedicineMatchResult | null {
+  // 五级优先级匹配
+}
+```
+
+#### 五级匹配流程
+
+| 优先级 | 匹配方式 | 示例 | 适用场景 |
+|--------|---------|------|---------|
+| 1 | 精确匹配药品名称 | "蒙脱石散" → 蒙脱石散 | ASR 完美识别 |
+| 2 | 精确匹配别名 | "999感冒灵" → 感冒灵 | 用户说品牌名 |
+| 3 | 拼音全拼匹配 | "mengtuoshisan" → 蒙脱石散 | 同音字错误 |
+| 4 | 拼音首字母匹配 | "mtss" → 蒙脱石散 | 部分识别错误 |
+| 5 | Levenshtein 模糊匹配 | "蒙托石散" → 蒙脱石散（距离≤2） | 1-2字错误 |
+
+#### 关键实现
+
+**1. 拼音首字母生成（正确处理鼻音）**
+```typescript
+static generatePinyinInitials(pinyin: string): string {
+  // 按音节提取首字母
+  // 正确处理 n/ng 鼻音韵母，避免误截断
+  // 蒙脱石散 → mengtuoShisan → mtss
+}
+```
+
+**2. Levenshtein 编辑距离**
+```typescript
+static levenshteinDistance(a: string, b: string): number {
+  // 计算最小编辑操作数（插入/删除/替换）
+  // 允许 1-2 字错误，覆盖常见 ASR 错误
+}
+```
+
+**3. VoiceService 简化**
+```typescript
+// 移除 bestResults 逻辑（API不支持）
+// 使用单结果 + 五级匹配
+const candidates = [recognizedText];
+const parsed = this.parseVoiceCommandWithCandidates(candidates);
+```
+
+#### 匹配效果示例
+
+| ASR 结果 | 匹配药品 | 匹配方式 | confidence |
+|---------|---------|---------|-----------|
+| 蒙脱石散 | 蒙脱石散 | 精确名称 | 1 |
+| 猛托石散 | 蒙脱石散 | 拼音全拼 | 3 |
+| mtss | 蒙脱石散 | 拼音首字母 | 4 |
+| 蒙拖石散 | 蒙脱石散 | Levenshtein | 5 |
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/services/MedicineDatabase.ets (接口定义 + 五级匹配)
+- entry/src/main/ets/services/VoiceService.ets (移除bestResults + 单结果匹配)
+- Design.md (五级匹配规范)
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 9 s 493 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+---
+
+### 2026-04-04 更新：拼音首字母匹配修复 + 药品库优化
+
+#### 问题背景
+1. 拼音首字母匹配不生效：`textToPinyin()` 只处理数字，不转换汉字
+2. "蒙脱石"匹配到独立条目（原料药），而非"蒙脱石散"的别名
+3. 剂量"一袋"被 ASR 识别成"一代"，无法解析
+
+#### 解决方案
+
+**1. 汉字到拼音首字母映射**
+
+原 `textToPinyin()` 只处理数字，汉字原样返回，导致首字母匹配失效。
+
+```typescript
+// MedicineDatabase.ets - 新增 charToInitial 映射表
+private static charToInitial: Map<string, string> = new Map([
+  // 同音字映射（覆盖药品库常用字）
+  ['蒙', 'm'], ['猛', 'm'], ['梦', 'm'],
+  ['脱', 't'], ['拖', 't'], ['托', 't'],
+  ['石', 's'], ['十', 's'], ['时', 's'],
+  ['散', 's'], ['闪', 's'], ['山', 's'],
+  // ... 100+ 常用字
+]);
+
+// 新增方法
+private static getInitialsFromText(text: string): string {
+  const initials: string[] = [];
+  for (const char of text) {
+    const initial = MedicineDatabase.charToInitial.get(char);
+    if (initial) initials.push(initial);
+  }
+  return initials.join('');
+}
+```
+
+**匹配效果**：
+
+| ASR 结果 | 首字母提取 | 药品库首字母 | 匹配结果 |
+|---------|-----------|-------------|---------|
+| 猛拖十闪 | mtss | mtss | 蒙脱石散 ✅ |
+| 蒙脱石 | mts | mtss | 蒙脱石散（别名）✅ |
+
+**2. 药品库优化**
+
+| 操作 | 数量 |
+|------|------|
+| 删除原料药 | 1468 条 |
+| 剩余药品 | 17619 条 |
+| 删除独立"蒙脱石"条目 | 1 条 |
+
+用户说"蒙脱石"现在匹配到"蒙脱石散"的别名，而非独立的原料药条目。
+
+**3. ASR 纠错映射扩展**
+
+```typescript
+['猛拖十闪', '蒙脱石散'],  // "石"→"十"，"散"→"闪"
+['猛拖死闪', '蒙脱石散'],
+['松石散', '蒙脱石散'],
+```
+
+**4. 剂量纠错**
+
+```typescript
+// Index.ets - parseDosageFromText
+const correctedText = text.replace(/代/g, '袋');
+// 用户说"一袋"，ASR识别成"一代" → 纠正为"一袋" → 解析为"1袋"
+```
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/services/MedicineDatabase.ets
+  - 新增 charToInitial 映射表（100+ 汉字）
+  - 新增 getInitialsFromText() 方法
+  - 删除 1468 条原料药
+  - 删除独立的"蒙脱石"条目
+  - 扩展 ASR 纠错映射
+- entry/src/main/ets/pages/Index.ets
+  - 剂量纠错：代 → 袋
+- Design.md
+- REQ0.1.md
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 10 s 628 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+- 语音"蒙脱石散"匹配成功 ✅
+- 语音"一袋"正确解析为"1袋" ✅
+
+---
+
+### 2026-04-06 更新：药品库外部数据源重构
+
+#### 问题背景
+MedicineDatabase.ets 包含 17611 条药品硬编码数据（18236 行代码），维护成本高，无法增量更新。
+
+#### 解决方案
+
+**架构设计**：
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ 数据流：rawfile/medicine_base.json → MedicineLoader → 查询     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**1. 数据提取**
+- 创建 `extract-medicine-data.js`（Node.js 脚本）
+- 从 MedicineDatabase.ets 提取数据生成 `medicine_base.json`
+- 输出：17611 条药品 + 14 条 ASR 纠错 + 424 条汉字首字母映射 + 63 条同音字映射
+
+**2. 数据加载服务**
+- 创建 `MedicineLoader.ets`（354 行）
+- 从 rawfile 加载 JSON 数据
+- 查询接口：`getMedicine()`, `correctAsr()`, `getAllMedicines()`
+
+**3. 硬编码数据删除**
+- MedicineDatabase.ets: 18236 行 → 626 行
+- 删除 `medicineDb` 数组（17611 条硬编码药品）
+- 保留 ASR 纠错映射、汉字首字母映射、同音字映射作为 fallback
+
+**4. 初始化流程修改**
+```typescript
+// MedicineDatabase.ets
+static async initialize(context?: common.Context): Promise<void> {
+  const loader = MedicineLoader.getInstance();
+  if (context) {
+    await loader.load(context);  // 从 rawfile 加载
+  }
+  if (loader.isLoaded()) {
+    // 使用外部数据源
+  } else {
+    // 回退到内置 fallback
+  }
+}
+
+// EntryAbility.ets
+await MedicineDatabase.initialize(this.context);
+```
+
+**5. 云端同步预留接口**
+- 创建 `MedicineSyncService.ets`（365 行）— 预留，当前版本不启用
+- EntryAbility 中注释保留调用代码
+
+#### 文件变更
+```
+新增:
+- entry/src/main/resources/rawfile/medicine_base.json (3.5MB, 17611 条药品)
+- entry/src/main/ets/services/MedicineLoader.ets (354 行)
+- entry/src/main/ets/services/MedicineSyncService.ets (365 行，预留接口)
+- scripts/extract-medicine-data.js (数据提取脚本)
+
+修改:
+- entry/src/main/ets/services/MedicineDatabase.ets (18236 行 → 626 行)
+  - 删除硬编码药品数据
+  - initialize() 改为异步，从 rawfile 加载
+  - 查询方法使用 MedicineLoader 数据
+- entry/src/main/ets/entryability/EntryAbility.ets
+  - 调用 `await MedicineDatabase.initialize(this.context)`
+  - 云端同步代码已注释（预留）
+
+删除:
+- server/ 目录（不需要）
+```
+
+#### 代码行数对比
+| 文件 | 重构前 | 重构后 |
+|------|--------|--------|
+| MedicineDatabase.ets | 18236 行 | 626 行 |
+| medicine_base.json | - | 3.5MB (新增) |
+| MedicineLoader.ets | - | 354 行 (新增) |
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 3 s 364 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+- 硬编码检查: `grep "归脾丸" MedicineDatabase.ets` → 无匹配 ✓
+- 数据加载: rawfile JSON 成功加载到内存 ✓

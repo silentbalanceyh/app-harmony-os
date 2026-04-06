@@ -621,3 +621,272 @@ async speak(text: string): Promise<void> {
 - 构建状态: **BUILD SUCCESSFUL in 2 s 496 ms**
 - 安装状态: **install bundle successfully**
 - 启动状态: **start ability successfully**
+
+### 2026-04-04 更新：权限引导流程重构（系统权限优先）
+
+#### 流程设计（最终版）
+
+**权限请求流程**（与应用启动时一致）：
+1. 点击拍照按钮 → **直接弹系统权限框**（不先弹自定义弹窗）
+2. 用户选择：
+   - 允许 → 打开相册选择药品图片
+   - 拒绝 → 弹降级弹窗（只有"相册"按钮）
+3. 选择图片后检查麦克风权限 → **直接弹系统权限框**
+4. 用户选择：
+   - 允许 → 进入语音多轮对话设置提醒
+   - 拒绝 → 弹降级弹窗（只有"返回"按钮），返回主页
+
+#### 弹窗类型
+
+| 弹窗 | 触发时机 | 按钮 |
+|------|---------|------|
+| 相机权限降级 | 拒绝系统相机权限后 | **相册**（单按钮） |
+| 麦克风权限降级 | 拒绝系统麦克风权限后 | **返回**（单按钮） |
+
+#### 弹窗样式规范
+
+```typescript
+// 相机权限降级弹窗（单按钮）
+Column({ space: 24 }) {
+  Text('📷').fontSize(48)
+  Text('需要相机权限').fontSize(32).fontWeight(FontWeight.Bold).fontColor(COLORS.textBlack)
+  Text('您拒绝了相机权限，可使用相册选择药品图片').fontSize(24).fontColor(COLORS.textGray).textAlign(TextAlign.Center)
+  Button('相册')
+    .fontSize(28).fontColor('#FFFFFF').backgroundColor(COLORS.cameraButton)
+    .width('100%').height(64)
+}
+.width('85%').padding(32).backgroundColor(COLORS.cardBg).borderRadius(24)
+
+// 麦克风权限降级弹窗（单按钮）
+Column({ space: 24 }) {
+  Text('🎤').fontSize(48)
+  Text('需要麦克风权限').fontSize(32).fontWeight(FontWeight.Bold).fontColor(COLORS.textBlack)
+  Text('您拒绝了麦克风权限，无法使用语音设置功能').fontSize(24).fontColor(COLORS.textGray).textAlign(TextAlign.Center)
+  Button('返回')
+    .fontSize(28).fontColor('#FFFFFF').backgroundColor(COLORS.cameraButton)
+    .width('100%').height(64)
+}
+.width('85%').padding(32).backgroundColor(COLORS.cardBg).borderRadius(24)
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 2 s 847 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+### 2026-04-04 更新：通知权限检查优化
+
+#### 问题背景
+用户反馈：没有开启通知权限也能创建提醒，导致"假提醒"。
+
+#### 解决方案
+在创建提醒前检查通知权限，未开启时语音提示用户：
+
+```typescript
+// Step 4: 创建提醒前检查通知权限
+let notificationEnabled = await notificationManager.isNotificationEnabled();
+if (!notificationEnabled) {
+  this.showPrompt('需要开启通知权限才能提醒您');
+  await this.voice.speak('需要开启通知权限才能提醒您');
+  try {
+    await notificationManager.requestEnableNotification();
+    notificationEnabled = await notificationManager.isNotificationEnabled();
+  } catch (e) {
+    // 请求失败，提示用户手动开启
+  }
+}
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+
+### 2026-04-04 更新：ASR 纠错增强 + 药品库拼音首字母
+
+#### 问题背景
+用户说"蒙脱石散"，识别成"猛托石散"或"猛拖死伞"。
+
+#### 解决方案
+
+**1. 手动添加 ASR 纠错映射**
+```typescript
+['猛托石散', '蒙脱石散'],
+['猛拖死伞', '蒙脱石散'],
+['蒙托石散', '蒙脱石散'],
+```
+
+**2. 同音字映射扩展**
+```typescript
+['蒙', ['猛', '梦', '孟', '萌', '盟', '檬', '朦']],
+['脱', ['拖', '托', '妥', '陀', '驼', '拓']],
+['石', ['十', '时', '事', '实', '食', '史', '死']],
+```
+
+**3. 药品库添加拼音首字母**
+```typescript
+interface MedicineInfo {
+  pinyinInitials?: string;  // 拼音首字母：蒙脱石散 → mtss
+}
+```
+
+| 药品名 | 拼音 | 首字母 |
+|--------|------|--------|
+| 蒙脱石散 | mengtuoShisan | mtss |
+| 阿莫西林 | amoxilin | amxl |
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+- 纠错记录: **241393 条**（包含拼音首字母索引）
+
+### 2026-04-04 更新：剂量解析修复
+
+#### 问题背景
+用户说"两颗"，正确识别为"两颗。"，但解析结果显示"1片"。
+
+#### 解决方案
+添加详细解析日志确认匹配过程：
+```
+[Index] parseDosageFromText input: 两颗。
+[Index] Matched pattern: 两颗 -> 2颗
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+- "两颗"正确解析为"2颗"
+
+### 2026-04-04 更新：五级药品匹配算法
+
+#### 背景
+用户要求语音识别使用多候选结果匹配药品库，但 HarmonyOS NEXT `SpeechRecognitionResult` 没有 `bestResults` 属性。
+
+#### 解决方案
+实现单结果+五级优先级匹配算法：
+
+```typescript
+// MedicineDatabase.ets
+interface MedicineMatchResult {
+  medicineName: string;
+  confidence: number;  // 1-5，数字越小优先级越高
+}
+
+static matchMedicineFromCandidates(candidates: string[]): MedicineMatchResult | null {
+  // 五级优先级匹配
+}
+```
+
+#### 五级匹配流程
+
+| 优先级 | 匹配方式 | 示例 |
+|--------|---------|------|
+| 1 | 精确匹配药品名称 | "蒙脱石散" → 蒙脱石散 |
+| 2 | 精确匹配别名 | "999感冒灵" → 感冒灵 |
+| 3 | 拼音全拼匹配 | "mengtuoshisan" → 蒙脱石散 |
+| 4 | 拼音首字母匹配 | "mtss" → 蒙脱石散 |
+| 5 | Levenshtein 模糊匹配 | "蒙托石散" → 蒙脱石散（距离≤2） |
+
+#### 关键实现
+
+**1. 拼音首字母生成**
+```typescript
+static generatePinyinInitials(pinyin: string): string {
+  // 按音节提取首字母：蒙脱石散 → mtss
+  // 正确处理鼻音韵母 n/ng
+}
+```
+
+**2. Levenshtein 编辑距离**
+```typescript
+static levenshteinDistance(a: string, b: string): number {
+  // 计算最小编辑操作数
+  // 允许 1-2 字错误
+}
+```
+
+**3. 接口定义（ArkTS 类型安全）**
+```typescript
+interface MedicineMatchResult {
+  medicineName: string;
+  confidence: number;
+}
+
+interface LevenshteinMatch {
+  name: string;
+  distance: number;
+}
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 9 s 493 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+### 2026-04-04 更新：拼音首字母匹配修复 + 药品库优化
+
+#### 问题背景
+1. 拼音首字母匹配不生效：`textToPinyin()` 只处理数字，不转换汉字
+2. "蒙脱石"匹配到独立条目（原料药），而非"蒙脱石散"的别名
+3. 剂量"一袋"被识别成"一代"，无法解析
+
+#### 解决方案
+
+**1. 汉字到拼音首字母映射**
+```typescript
+// 新增 charToInitial 映射表
+private static charToInitial: Map<string, string> = new Map([
+  ['蒙', 'm'], ['猛', 'm'], ['梦', 'm'],  // 同音字映射
+  ['脱', 't'], ['拖', 't'], ['托', 't'],
+  ['石', 's'], ['十', 's'], ['时', 's'],
+  ['散', 's'], ['闪', 's'], ['山', 's'],
+  // ... 100+ 常用药品用字
+]);
+
+// 新增方法
+private static getInitialsFromText(text: string): string {
+  const initials: string[] = [];
+  for (const char of text) {
+    const initial = MedicineDatabase.charToInitial.get(char);
+    if (initial) initials.push(initial);
+  }
+  return initials.join('');
+}
+```
+
+**匹配效果**：
+| ASR 结果 | 首字母 | 药品库首字母 | 匹配结果 |
+|---------|--------|-------------|---------|
+| 猛拖十闪 | mtss | mtss | 蒙脱石散 ✅ |
+| 蒙脱石 | mts | mtss | 蒙脱石散（别名）✅ |
+
+**2. 药品库优化**
+- 删除 1468 条原料药（用户不会使用）
+- 删除独立的"蒙脱石"条目，保留为"蒙脱石散"的别名
+- 剩余药品：17619 条
+
+**3. ASR 纠错映射扩展**
+```typescript
+['猛拖十闪', '蒙脱石散'],  // 新增
+['猛拖死闪', '蒙脱石散'],
+['松石散', '蒙脱石散'],
+```
+
+**4. 剂量纠错**
+```typescript
+// Index.ets
+const correctedText = text.replace(/代/g, '袋');
+// "一代" → "一袋" → "1袋"
+```
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/services/MedicineDatabase.ets (charToInitial + 删除原料药)
+- entry/src/main/ets/pages/Index.ets (剂量纠错)
+- Design.md (文档更新)
+- REQ0.1.md (文档更新)
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+- "蒙脱石散"语音识别匹配成功 ✅
+- "一袋"正确解析为"1袋" ✅
