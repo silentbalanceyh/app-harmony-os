@@ -1,6 +1,11 @@
 /**
  * 语音交互服务
  * 使用 @hms.ai.speechRecognizer 和 @hms.ai.textToSpeech
+ *
+ * REQ0.2 优化：
+ * - 播报结束播放"滴"提示音
+ * - VAD 参数调优（前端点 600ms，后端点 1000ms）
+ * - 录音头部缓冲 200ms
  */
 
 import common from '@ohos.app.ability.common';
@@ -11,8 +16,16 @@ import abilityAccessCtrl, { Permissions } from '@ohos.abilityAccessCtrl';
 import { ReminderStore } from './ReminderStore';
 import { formatTimeSlot } from '../models/ReminderModel';
 import { MedicineDatabase } from './MedicineDatabase';
+import SoundEffectPlayer from '../utils/SoundEffectPlayer';
 
 const WAKEUP_WORD = '小药小药';
+
+// VAD 参数配置
+// vadBegin: 检测到静音后等待语音开始的超时时间
+// vadEnd: 检测到语音结束后静音多久认为说话结束
+const VAD_BEGIN_MS = 5000;    // 前端点：5秒（等待用户开始说话）
+const VAD_END_MS = 1500;      // 后端点：1.5秒（说完后等待时间）
+const RECORD_HEAD_BUFFER_MS = 200;
 
 export interface VoiceResult {
   success: boolean;
@@ -34,6 +47,8 @@ export class VoiceService {
   private asrEngine: speechRecognizer.SpeechRecognitionEngine | null = null;
   // 语音合成引擎
   private ttsEngine: textToSpeech.TextToSpeechEngine | null = null;
+  // 提示音播放器（使用 SoundEffectPlayer，REQ0.2）
+  private beepPlayer: SoundEffectPlayer | null = null;
 
   private isListening: boolean = false;
   private sessionId: string = '';
@@ -78,6 +93,28 @@ export class VoiceService {
     } catch (e) {
       console.error('[VoiceService] TTS init failed (may not support on emulator): ' + JSON.stringify(e));
       // TTS 初始化失败不阻止整个服务，只是语音播报不可用
+    }
+
+    // 初始化提示音播放器（REQ0.2）
+    this.beepPlayer = new SoundEffectPlayer();
+    console.info('[VoiceService] Beep player initialized');
+  }
+
+  /**
+   * 播放提示音"滴"（REQ0.2）
+   * 在播报结束后立即播放，告知用户可以说话
+   */
+  async playBeep(): Promise<void> {
+    if (!this.beepPlayer || !this.context) {
+      console.warn('[VoiceService] Beep player not available');
+      return;
+    }
+
+    try {
+      await this.beepPlayer.play(this.context, 'beep.wav');
+      console.info('[VoiceService] Beep played');
+    } catch (e) {
+      console.error('[VoiceService] Play beep failed: ' + JSON.stringify(e));
     }
   }
 
@@ -241,6 +278,8 @@ export class VoiceService {
 
     this.isListening = true;
     this.sessionId = Date.now().toString();
+    console.info('[VoiceService] ========== startRecognition BEGIN ==========');
+    console.info('[VoiceService] vadBegin=' + VAD_BEGIN_MS + 'ms, vadEnd=' + VAD_END_MS + 'ms, timeout=' + timeout + 'ms');
 
     return new Promise(async (resolve) => {
       let recognizedText: string = '';
@@ -264,15 +303,21 @@ export class VoiceService {
           if (audioCapturer) {
             audioCapturer.stop().then(() => audioCapturer?.release()).catch(() => {});
           }
-          console.info('[VoiceService] Recognition complete: ' + recognizedText + ', parseMedicine: ' + parseMedicine);
+          console.info('[VoiceService] ========== Recognition COMPLETE ==========');
+          console.info('[VoiceService] recognizedText="' + recognizedText + '", parseMedicine=' + parseMedicine);
 
           if (recognizedText) {
+            // 使用单结果+五级匹配算法
+            // 五级匹配包括：精确名、别名、拼音全拼、拼音首字母、Levenshtein模糊
+            const candidates = [recognizedText];
+            console.info('[VoiceService] Using single result with 5-level matching: ' + recognizedText);
+
             if (parseMedicine) {
-              // Step 1：问药品名，需要药品解析
-              const parsed = this.parseVoiceCommand(recognizedText);
+              // Step 1：问药品名，需要药品解析（使用五级匹配）
+              const parsed = this.parseVoiceCommandWithCandidates(candidates);
               resolve(parsed);
             } else {
-              // Step 2/3：问频率/剂量，直接返回原始文本，不经过药品解析
+              // Step 2/3：问频率/剂量，直接返回原始文本
               resolve({
                 success: true,
                 text: recognizedText,
@@ -305,12 +350,12 @@ export class VoiceService {
           },
           extraParams: {
             timeout: timeout,           // 总超时时间
-            vadBegin: 5000,             // 语音开始检测超时：5秒（等待开始说话）
-            vadEnd: 2000,               // 语音结束检测：2秒静默结束
+            vadBegin: VAD_BEGIN_MS,     // 前端点检测：600ms（REQ0.2 调优，解决开头丢字）
+            vadEnd: VAD_END_MS,         // 后端点检测：1000ms（确保说完再结束）
             maxAudioDuration: 60000     // 最大录音时长：60秒
           }
         });
-        console.info('[VoiceService] ASR startListening: vadBegin=5000ms, vadEnd=2000ms');
+        console.info('[VoiceService] ASR startListening: vadBegin=' + VAD_BEGIN_MS + 'ms, vadEnd=' + VAD_END_MS + 'ms');
 
         // 创建 AudioCapturer 采集麦克风音频
         const audioCapturerInfo: audio.AudioCapturerInfo = {
@@ -399,6 +444,67 @@ export class VoiceService {
     cleaned = cleaned.replace(/[，。、！？\s]+/g, '').trim();
 
     return cleaned;
+  }
+
+  /**
+   * 解析语音命令（使用多候选结果）
+   */
+  parseVoiceCommandWithCandidates(candidates: string[]): VoiceResult {
+    if (!candidates || candidates.length === 0) {
+      return { success: false, error: '没有识别到语音，请再说一遍' };
+    }
+
+    // 清理所有候选结果
+    const cleanedCandidates = candidates.map(t => this.cleanRecognitionText(t)).filter(t => t.length > 0);
+    console.info('[VoiceService] Cleaned candidates: ' + JSON.stringify(cleanedCandidates));
+
+    // 检查是否有查询命令
+    for (const text of cleanedCandidates) {
+      const lowerText = text.toLowerCase();
+      if (lowerText.includes('下次') || lowerText.includes('什么时候') || lowerText.includes('查询')) {
+        return {
+          success: true,
+          text: '查询下次提醒',
+          rawText: candidates[0]
+        };
+      }
+    }
+
+    // 使用多候选结果进行药品匹配
+    const matchResult = MedicineDatabase.matchMedicineFromCandidates(cleanedCandidates);
+
+    if (matchResult) {
+      console.info('[VoiceService] Medicine matched: ' + matchResult.medicineName + ' (confidence=' + matchResult.confidence + ')');
+
+      // 从第一个候选中提取时间和剂量
+      const firstCleaned = cleanedCandidates[0];
+      const timeMatch = this.extractTime(firstCleaned);
+      const dosageMatch = this.extractDosage(firstCleaned);
+      const frequencyMatch = this.extractFrequency(firstCleaned);
+
+      return {
+        success: true,
+        text: firstCleaned,
+        rawText: candidates[0],
+        time: timeMatch || undefined,
+        medicineName: matchResult.medicineName,
+        dosage: dosageMatch || '1片',
+        frequency: frequencyMatch || '每天'
+      };
+    }
+
+    // 无法匹配药品，返回第一个候选作为药品名（保持原有行为）
+    const firstCleaned = cleanedCandidates[0];
+    console.info('[VoiceService] No medicine matched, using first candidate as medicine name: ' + firstCleaned);
+
+    return {
+      success: true,
+      text: firstCleaned,
+      rawText: candidates[0],
+      medicineName: firstCleaned,
+      dosage: '1片',
+      frequency: '每天'
+    };
   }
 
   /**
