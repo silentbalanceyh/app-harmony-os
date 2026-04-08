@@ -38,3 +38,9 @@ node_modules/
 
 # Local configuration files (machine-specific)
 local.properties
+
+# Build profile (machine-specific paths)
+build-profile.json5
+
+# Claude local settings
+.claude/settings.local.json

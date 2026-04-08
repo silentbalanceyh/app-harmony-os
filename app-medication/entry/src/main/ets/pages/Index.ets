@@ -729,8 +729,9 @@ struct Index {
       this.medDosage = this.parseDosageFromText(resultText);
 
       // Step 3 确认
+      const dosageTts = this.dosageToTtsText(this.medDosage);
       this.showPrompt('好的，一次' + this.medDosage);
-      await this.voice.speak('好的，一次' + this.medDosage);
+      await this.voice.speak('好的，一次' + dosageTts);
       await this.waitMs(1000);
 
       // Step 4: 最终确认并创建提醒
@@ -784,11 +785,15 @@ struct Index {
       await this.loadList();
 
       // REQ0.2: 播报确认
+      const dosageTtsFinal = this.dosageToTtsText(this.medDosage);
       const confirmMsg = '已设置 ' + this.medName + '，' + this.medFrequency +
                          (times.length > 1 ? '' : '，' + times[0] + '提醒') +
                          '，每次' + this.medDosage;
+      const confirmMsgTts = '已设置 ' + this.medName + '，' + this.medFrequency +
+                         (times.length > 1 ? '' : '，' + times[0] + '提醒') +
+                         '，每次' + dosageTtsFinal;
       this.showPrompt(confirmMsg);
-      await this.voice.speak(confirmMsg);
+      await this.voice.speak(confirmMsgTts);
 
       // 播报完成后等待
       await this.waitMs(1000);
@@ -819,6 +824,18 @@ struct Index {
     if (text.includes('三例') || text.includes('三类')) {
       console.info('[Index] Matched: 两次 (ASR误识别: 三例/三类)');
       return '一天两次';
+    }
+
+    // "一力" - 用户说"一次"时ASR误识别成"两次"相关音
+    if (text.includes('一力') || text.includes('一例') || text.includes('一立')) {
+      console.info('[Index] Matched: 一次 (ASR误识别: 一力/一例/一立)');
+      return '一天一次';
+    }
+
+    // "依" - "一"的同音字误识别
+    if (text.includes('依') && !text.includes('依次')) {
+      // "依"单独出现可能是"一"的误识别
+      console.info('[Index] Note: 依 detected, may be 一');
     }
 
     // 三次：支持多种表达和ASR误识别
@@ -880,17 +897,16 @@ struct Index {
     // 支持的单位
     const units = ['片', '颗', '粒', '袋', '包', '勺', '支', '丸', '滴', '个', '瓶'];
 
-    // 0. ASR常见误识别优先处理
-    // "二颗/二粒" → 用户说"两颗/两粒"时ASR常见误识别
-    // 注意：只替换"二"为"2"，保留其他文本（如"一次二颗" → "一次2颗"）
+    // 0. ASR常见误识别优先处理 - "二X" → 用户说"两X"时ASR常见误识别
+    // 全面覆盖所有单位，确保"二"统一转换为阿拉伯数字"2"
     let correctedInput = text;
-    if (correctedInput.includes('二颗')) {
-      correctedInput = correctedInput.replace('二颗', '2颗');
-      console.info('[Index] Corrected: 二颗 -> 2颗 in ' + text);
-    }
-    if (correctedInput.includes('二粒')) {
-      correctedInput = correctedInput.replace('二粒', '2粒');
-      console.info('[Index] Corrected: 二粒 -> 2粒 in ' + text);
+    const erCorrectionUnits = ['片', '颗', '粒', '袋', '包', '勺', '支', '丸', '滴', '个', '瓶'];
+    for (const unit of erCorrectionUnits) {
+      const erPattern = '二' + unit;
+      if (correctedInput.includes(erPattern)) {
+        correctedInput = correctedInput.replace(erPattern, '2' + unit);
+        console.info('[Index] Corrected: 二' + unit + ' -> 2' + unit + ' in ' + text);
+      }
     }
     text = correctedInput;
 
@@ -971,6 +987,43 @@ struct Index {
       default:
         return ['08:00'];
     }
+  }
+
+  /**
+   * 将剂量转换为适合TTS朗读的中文格式
+   * TTS会将阿拉伯数字读成"一、二、三"，对于数量词应该用"一、两、三"更自然
+   * 例如: "2颗" → "两颗", "3颗" → "三颗"
+   */
+  private dosageToTtsText(dosage: string): string {
+    // 阿拉伯数字到中文数字的映射（用于数量词）
+    // 注意：1读"一"，2读"两"，其他读原字
+    const numToTts: Record<string, string> = {
+      '0.5': '半',
+      '1': '一',
+      '2': '两',
+      '3': '三',
+      '4': '四',
+      '5': '五',
+      '6': '六',
+      '7': '七',
+      '8': '八',
+      '9': '九',
+      '10': '十'
+    };
+
+    // 匹配数字+单位的格式
+    const match = dosage.match(/^(\d+(?:\.\d+)?)\s*(.+)$/);
+    if (match) {
+      const num = match[1];
+      const unit = match[2];
+      const chineseNum = numToTts[num];
+      if (chineseNum) {
+        return chineseNum + unit;
+      }
+      // 如果不在映射表中，返回原值
+      return dosage;
+    }
+    return dosage;
   }
 
   /**
