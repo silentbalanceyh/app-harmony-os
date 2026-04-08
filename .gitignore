@@ -35,3 +35,6 @@ node_modules/
 # Logs
 *.log
 /.logs/
+
+# Local configuration files (machine-specific)
+local.properties

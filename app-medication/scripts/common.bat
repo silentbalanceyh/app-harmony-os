@@ -155,8 +155,15 @@ exit /b 0
 :install
 set "_hap="
 rem Use direct dir command in for loop (subshell can't see script functions)
-for /f "usebackq delims=" %%i in (`dir /s /b "%APP_ROOT%\entry\build\default\outputs\default\*.hap" 2^>nul ^| findstr /v "unsigned"`) do (
+rem First try to find signed HAP
+for /f "usebackq delims=" %%i in (`dir /s /b "%APP_ROOT%\entry\build\default\outputs\default\*-signed.hap" 2^>nul`) do (
     set "_hap=%%i"
+)
+rem If no signed HAP, find any HAP that's not unsigned
+if not defined _hap (
+    for /f "usebackq delims=" %%i in (`dir /s /b "%APP_ROOT%\entry\build\default\outputs\default\*.hap" 2^>nul ^| findstr /v "unsigned"`) do (
+        set "_hap=%%i"
+    )
 )
 if not defined _hap (
     call :error "No HAP found, build first"

@@ -1,6 +1,20 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\10967\\.ohos\\config\\default_app-medication_nIeFKlcdQxotX0LVXrYHi7NePIoPIn-PL0rHwt1RGqk=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001A286844843AC779FCC3714A74F0442D249DE3BC854D6226109AF1FE960F2328EA5F43AD3C2B26",
+          "profile": "C:\\Users\\10967\\.ohos\\config\\default_app-medication_nIeFKlcdQxotX0LVXrYHi7NePIoPIn-PL0rHwt1RGqk=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\10967\\.ohos\\config\\default_app-medication_nIeFKlcdQxotX0LVXrYHi7NePIoPIn-PL0rHwt1RGqk=.p12",
+          "storePassword": "0000001AD8FBD0C4B0086116C69DF727BC9B2F8899E65DC8B7FD336D10E86AFAFB90D60F11E79D44BF4F"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
@@ -11,8 +25,12 @@
       }
     ],
     "buildModeSet": [
-      { "name": "debug" },
-      { "name": "release" }
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
     ]
   },
   "modules": [
@@ -22,7 +40,9 @@
       "targets": [
         {
           "name": "default",
-          "applyToProducts": ["default"]
+          "applyToProducts": [
+            "default"
+          ]
         }
       ]
     }

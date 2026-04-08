@@ -6,14 +6,14 @@ import resourceManager from '@ohos.resourceManager';
 const MAX_STREAMS: number = 2;
 
 const AUDIO_RENDERER_INFO: audio.AudioRendererInfo = {
-  usage: audio.StreamUsage.STREAM_USAGE_MUSIC,
+  usage: audio.StreamUsage.STREAM_USAGE_NOTIFICATION,
   rendererFlags: 0
 };
 
 const PLAY_PARAMETERS: media.PlayParameters = {
   loop: 0,
-  leftVolume: 0.70,
-  rightVolume: 0.70,
+  leftVolume: 1.0,
+  rightVolume: 1.0,
   priority: 1
 };
 
@@ -26,7 +26,26 @@ export default class SoundEffectPlayer {
     try {
       const soundPool: media.SoundPool = await this.getSoundPool();
       const soundId: number = await this.getSoundId(context, rawFilePath);
-      await soundPool.play(soundId, PLAY_PARAMETERS);
+
+      // 返回 Promise，等待播放完成
+      return new Promise<void>((resolve, reject) => {
+        let streamId: number = 0;
+
+        // 监听播放完成事件
+        soundPool.on('playFinished', () => {
+          console.info('[SoundEffectPlayer] Play finished: ' + rawFilePath);
+          resolve();
+        });
+
+        // 开始播放
+        soundPool.play(soundId, PLAY_PARAMETERS).then((id: number) => {
+          streamId = id;
+          console.info('[SoundEffectPlayer] Playing: ' + rawFilePath + ', streamId=' + id);
+        }).catch((err: Error) => {
+          console.error('[SoundEffectPlayer] Play failed: ' + JSON.stringify(err));
+          reject(err);
+        });
+      });
     } catch (err) {
       console.error('Sound effect play failed: ' + JSON.stringify(err));
     }
