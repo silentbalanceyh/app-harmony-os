@@ -11,7 +11,8 @@ import abilityAccessCtrl, { Permissions } from '@ohos.abilityAccessCtrl';
 import picker from '@ohos.file.picker';
 import { cameraPicker, camera } from '@kit.CameraKit';
 import { BusinessError } from '@ohos.base';
-import { MedicineReminder, ReminderStatus } from '../models/ReminderModel';
+import notificationManager from '@ohos.notificationManager';
+import { MedicineReminder, ReminderStatus, ReminderFrequency } from '../models/ReminderModel';
 import { reminderStore } from '../services/ReminderStore';
 import { voiceService, VoiceResult } from '../services/VoiceService';
 import { cameraOcrService, OcrResult } from '../services/CameraOcrService';
@@ -83,6 +84,18 @@ struct Index {
   @State private medDosage: string = '';     // 一次多少
   @State private voicePrompt: string = '';   // 语音提示文字（视觉反馈）
   @State private showVoicePrompt: boolean = false;  // 显示语音提示
+  @State private showMicAnimation: boolean = false; // 麦克风闪烁动画（REQ0.2）
+  @State private showBeepHint: boolean = false;     // 显示"请说话"提示（REQ0.2）
+  @State private showAlarmDialog: boolean = false;  // 显示闹铃弹窗
+  @State private alarmReminder: MedicineReminder | null = null;  // 当前触发的提醒
+  @State private showCameraGuide: boolean = false;  // 显示相机权限引导弹窗（去设置页面）
+  @State private showMicrophoneGuide: boolean = false;  // 显示麦克风权限引导弹窗
+  @State private pendingImageUri: string = '';  // 拍照/选图后的临时图片路径（等待麦克风权限）
+
+  // 静态变量存储活动闹铃（跨页面生命周期）
+  private static activeAlarmId: string = '';
+  private static activeAlarmName: string = '';
+  private static activeAlarmDosage: string = '';
 
   private sound: SoundEffectPlayer = new SoundEffectPlayer();
   private store = reminderStore;
@@ -119,12 +132,67 @@ struct Index {
     }
   }
 
+  /**
+   * 检查并请求通知权限
+   * HarmonyOS NEXT 中 requestEnableNotification() 已废弃，
+   * 需要引导用户到系统设置开启通知权限
+   */
+  private async checkNotificationPermission(): Promise<boolean> {
+    try {
+      const enabled = await notificationManager.isNotificationEnabled();
+      console.info('[Index] Notification permission: ' + enabled);
+
+      if (!enabled) {
+        // 尝试使用 requestEnableNotification（某些设备可能支持）
+        try {
+          await notificationManager.requestEnableNotification();
+          const enabledNow = await notificationManager.isNotificationEnabled();
+          console.info('[Index] Notification permission after request: ' + enabledNow);
+          if (enabledNow) {
+            await this.setupNotificationSlots();
+          }
+          return enabledNow;
+        } catch (reqErr) {
+          // requestEnableNotification 失败，记录日志但不阻塞
+          console.warn('[Index] requestEnableNotification failed, notification may need manual enable: ' + JSON.stringify(reqErr));
+          // 仍然返回 true，让应用正常启动，用户可以在需要时手动开启通知
+          return true;
+        }
+      }
+      // 已开启通知权限，设置通知槽
+      await this.setupNotificationSlots();
+      return true;
+    } catch (e) {
+      console.error('[Index] Check notification permission failed: ' + JSON.stringify(e));
+      return true; // 失败时不阻塞应用启动
+    }
+  }
+
+  /**
+   * 设置通知槽：开启所有通知选项
+   */
+  private async setupNotificationSlots(): Promise<void> {
+    try {
+      // 添加服务提醒通知槽（高优先级）
+      await notificationManager.addSlot(notificationManager.SlotType.SERVICE_INFORMATION);
+      // 添加社交通讯通知槽
+      await notificationManager.addSlot(notificationManager.SlotType.SOCIAL_COMMUNICATION);
+      console.info('[Index] Notification slots added');
+    } catch (e) {
+      console.error('[Index] Setup notification slots failed: ' + JSON.stringify(e));
+    }
+  }
+
   aboutToAppear(): void {
     const ctx = this.getContext();
     void this.initAll(ctx);
     void this.loadList();
-    // 启动时主动请求权限
+    // 启动时主动请求权限（相机、麦克风）
     void this.requestPermissions();
+    // 延迟请求通知权限，确保 UI 完全就绪
+    setTimeout(() => {
+      void this.checkNotificationPermission();
+    }, 1000);
   }
 
   aboutToDisappear(): void {
@@ -138,8 +206,50 @@ struct Index {
       await this.store.init(ctx);
       await this.voice.init(ctx, this.store);
       await this.camera.init(ctx);
-      await this.reminder.init(ctx, this.store);
+      // 设置提醒触发回调
+      await this.reminder.init(ctx, this.store, (trigger: ReminderTrigger) => {
+        console.info('[Index] Reminder triggered: ' + trigger.medicineName);
+        // 保存到静态变量
+        Index.activeAlarmId = trigger.reminderId;
+        Index.activeAlarmName = trigger.medicineName;
+        // 从当前列表中查找剂量
+        const found = this.reminders.find((r: MedicineReminder) => r.id === trigger.reminderId);
+        Index.activeAlarmDosage = found ? found.dosage : '';
+        // 直接从当前列表中查找
+        if (found) {
+          this.alarmReminder = found;
+        } else {
+          this.alarmReminder = {
+            id: trigger.reminderId,
+            time: '',
+            medicineName: trigger.medicineName,
+            dosage: Index.activeAlarmDosage,
+            frequency: 'daily',
+            status: 'reminded',
+            createdAt: trigger.triggeredAt,
+            retryCount: 0
+          } as MedicineReminder;
+        }
+        this.showAlarmDialog = true;
+        console.info('[Index] showAlarmDialog set to true');
+      });
       console.info('[Index] Init OK');
+
+      // 检查是否有活动的闹铃（用户可能从后台返回）
+      if (Index.activeAlarmId && Index.activeAlarmName) {
+        console.info('[Index] Restoring active alarm: ' + Index.activeAlarmName);
+        this.alarmReminder = {
+          id: Index.activeAlarmId,
+          time: '',
+          medicineName: Index.activeAlarmName,
+          dosage: Index.activeAlarmDosage,
+          frequency: 'daily',
+          status: 'reminded',
+          createdAt: Date.now(),
+          retryCount: 0
+        } as MedicineReminder;
+        this.showAlarmDialog = true;
+      }
     } catch (e) {
       console.error('[Index] Init err: ' + JSON.stringify(e));
     }
@@ -283,51 +393,150 @@ struct Index {
   }
 
   /**
-   * 请求相机权限
+   * 检查相机权限
    */
-  private async requestCameraPermission(): Promise<boolean> {
+  private async checkCameraPermission(): Promise<boolean> {
     try {
       const atManager = abilityAccessCtrl.createAtManager();
       const context = this.getContext();
       const tokenID = context.applicationInfo.accessTokenId;
-
-      // 先检查是否已有权限
       const grantStatus = await atManager.verifyAccessToken(tokenID, 'ohos.permission.CAMERA');
-      if (grantStatus === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED) {
-        console.info('[Index] Camera permission already granted');
-        return true;
-      }
-
-      // 请求权限
-      console.info('[Index] Requesting camera permission...');
-      const result = await atManager.requestPermissionsFromUser(context, ['ohos.permission.CAMERA']);
-      console.info('[Index] Permission result: ' + JSON.stringify(result));
-
-      if (result.authResults && result.authResults.length > 0 && result.authResults[0] === 0) {
-        return true;
-      }
-      return false;
+      return grantStatus === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
     } catch (e) {
-      console.error('[Index] Request camera permission failed: ' + JSON.stringify(e));
+      console.error('[Index] Check camera permission failed: ' + JSON.stringify(e));
       return false;
     }
   }
 
   /**
-   * 拍照功能
-   * 流程：请求权限 → 打开相机拍照 → 启动语音多轮对话
+   * 检查麦克风权限
    */
-  private async doCapture(): Promise<void> {
-    console.info('[Index] doCapture called, isCapturing=' + this.isCapturing);
-    if (this.isCapturing) {
-      console.warn('[Index] Already capturing, skip');
-      return;
+  private async checkMicrophonePermission(): Promise<boolean> {
+    try {
+      const atManager = abilityAccessCtrl.createAtManager();
+      const context = this.getContext();
+      const tokenID = context.applicationInfo.accessTokenId;
+      const grantStatus = await atManager.verifyAccessToken(tokenID, 'ohos.permission.MICROPHONE');
+      return grantStatus === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
+    } catch (e) {
+      console.error('[Index] Check microphone permission failed: ' + JSON.stringify(e));
+      return false;
     }
-    this.isCapturing = true;
-    this.vib(50);
+  }
 
-    // 直接使用 photoPicker（在模拟器上 cameraPicker 不可用）
-    // photoPicker 在真机会显示相机按钮，模拟器上可以选图片
+  /**
+   * 请求相机权限（弹系统权限框）
+   */
+  private async requestCameraPermission(): Promise<boolean> {
+    try {
+      const atManager = abilityAccessCtrl.createAtManager();
+      const context = this.getContext();
+
+      console.info('[Index] === requestCameraPermission START ===');
+      const result = await atManager.requestPermissionsFromUser(context, ['ohos.permission.CAMERA']);
+      console.info('[Index] Camera permission result: ' + JSON.stringify(result));
+
+      if (result.authResults && result.authResults.length > 0 && result.authResults[0] === 0) {
+        console.info('[Index] Camera permission GRANTED');
+        return true;
+      }
+
+      // 检查是否弹出了对话框
+      const dialogShown = result.dialogShownResults && result.dialogShownResults[0] === true;
+      if (!dialogShown) {
+        // 没有弹框，说明用户之前拒绝过并选择了"不再询问"，需要引导去设置页面
+        console.info('[Index] Camera dialog not shown, showing guide dialog');
+        this.showCameraGuide = true;
+        this.isCapturing = false;
+        return false;
+      }
+
+      // 弹框了但用户拒绝，允许打开相册
+      console.info('[Index] Camera permission DENIED by user, proceeding to gallery');
+      return true;
+    } catch (e) {
+      console.error('[Index] Request camera permission failed: ' + JSON.stringify(e));
+      return true; // 失败时也允许打开相册
+    }
+  }
+
+  /**
+   * 请求麦克风权限（弹系统权限框）
+   */
+  private async requestMicrophonePermission(): Promise<boolean> {
+    try {
+      const atManager = abilityAccessCtrl.createAtManager();
+      const context = this.getContext();
+
+      const result = await atManager.requestPermissionsFromUser(context, ['ohos.permission.MICROPHONE']);
+      console.info('[Index] Microphone permission result: ' + JSON.stringify(result));
+      if (result.authResults && result.authResults.length > 0 && result.authResults[0] === 0) {
+        return true;
+      }
+      // 用户拒绝，返回 false，由调用方决定下一步操作
+      return false;
+    } catch (e) {
+      console.error('[Index] Request microphone permission failed: ' + JSON.stringify(e));
+      return false;
+    }
+  }
+
+  /**
+   * 用户点击"相册"按钮
+   */
+  private async useGalleryInstead(): Promise<void> {
+    this.showCameraGuide = false;
+    this.vib(50);
+    await this.openPhotoPicker();
+  }
+
+  /**
+   * 用户点击"去开启"相机权限
+   */
+  private async requestCameraFromGuide(): Promise<void> {
+    this.showCameraGuide = false;
+    this.vib(50);
+    // 弹系统权限框
+    const granted = await this.requestCameraPermission();
+    // 无论允许还是拒绝，都打开相册
+    await this.openPhotoPicker();
+  }
+
+  /**
+   * 用户点击"返回"按钮（麦克风权限弹窗）
+   */
+  private async returnFromMicrophoneGuide(): Promise<void> {
+    this.showMicrophoneGuide = false;
+    this.vib(50);
+    this.pendingImageUri = '';
+  }
+
+  /**
+   * 用户点击"去开启"麦克风权限
+   */
+  private async requestMicrophoneFromGuide(): Promise<void> {
+    this.showMicrophoneGuide = false;
+    this.vib(50);
+    // 弹系统权限框
+    const granted = await this.requestMicrophonePermission();
+    if (granted) {
+      // 权限获取成功，启动语音对话
+      this.medImage = this.pendingImageUri;
+      this.pendingImageUri = '';
+      await this.startVoiceDialogFlow();
+    } else {
+      // 权限被拒绝，显示提示
+      this.pendingImageUri = '';
+      this.showPrompt('无法使用语音功能，需要麦克风权限');
+      await this.waitMs(3000);
+      this.hidePrompt();
+    }
+  }
+
+  /**
+   * 打开相册选择图片
+   */
+  private async openPhotoPicker(): Promise<void> {
     try {
       console.info('[Index] Opening photoPicker...');
       const photoPicker = new picker.PhotoViewPicker();
@@ -339,10 +548,33 @@ struct Index {
       console.info('[Index] photoPicker result: ' + JSON.stringify(selectResult));
 
       if (selectResult.photoUris && selectResult.photoUris.length > 0) {
-        this.medImage = selectResult.photoUris[0];
-        console.info('[Index] Image selected: ' + this.medImage);
+        this.pendingImageUri = selectResult.photoUris[0];
+        console.info('[Index] Image selected: ' + this.pendingImageUri);
         this.isCapturing = false;
-        await this.startVoiceDialogFlow();
+
+        // 图片选择完成后，检查麦克风权限
+        const hasMic = await this.checkMicrophonePermission();
+        if (hasMic) {
+          // 有麦克风权限，直接启动语音对话
+          this.medImage = this.pendingImageUri;
+          this.pendingImageUri = '';
+          await this.startVoiceDialogFlow();
+        } else {
+          // 无麦克风权限，弹系统权限框（和启动时一样）
+          const micGranted = await this.requestMicrophonePermission();
+          if (micGranted) {
+            // 权限获取成功，启动语音对话
+            this.medImage = this.pendingImageUri;
+            this.pendingImageUri = '';
+            await this.startVoiceDialogFlow();
+          } else {
+            // 权限被拒绝，提示用户并返回
+            this.pendingImageUri = '';
+            this.showPrompt('无法使用语音功能，需要麦克风权限');
+            await this.waitMs(3000);
+            this.hidePrompt();
+          }
+        }
         return;
       } else {
         console.warn('[Index] photoPicker returned no photoUris');
@@ -352,19 +584,92 @@ struct Index {
     }
 
     this.isCapturing = false;
-    console.info('[Index] doCapture finished with no image');
+    console.info('[Index] openPhotoPicker finished with no image');
+  }
+
+  /**
+   * 拍照功能入口
+   * 流程：弹系统权限框请求相机权限 → 打开相册
+   */
+  private async doCapture(): Promise<void> {
+    console.info('[Index] doCapture called, isCapturing=' + this.isCapturing);
+    if (this.isCapturing) {
+      console.warn('[Index] Already capturing, skip');
+      return;
+    }
+    this.isCapturing = true;
+    this.vib(50);
+
+    // 请求相机权限，返回 true 表示可以打开相册
+    const canProceed = await this.requestCameraPermission();
+    if (canProceed) {
+      // 权限获取成功或首次请求被拒绝，打开相册
+      await this.openPhotoPicker();
+    }
+    // 如果 canProceed = false 且 showCameraGuide = true，说明需要显示引导弹窗，不打开相册
   }
 
   /**
    * 显示语音提示（视觉反馈）
    */
+  /**
+   * 显示语音提示文本（不自动隐藏，需要手动调用 hidePrompt）
+   */
   private showPrompt(text: string): void {
     this.voicePrompt = text;
     this.showVoicePrompt = true;
-    // 3秒后自动隐藏
-    setTimeout(() => {
-      this.showVoicePrompt = false;
-    }, 3000);
+  }
+
+  /**
+   * 隐藏语音提示文本
+   */
+  private hidePrompt(): void {
+    this.showVoicePrompt = false;
+  }
+
+  /**
+   * 等待指定毫秒（让老人看清提示文本）
+   */
+  private waitMs(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 同步语音交互步骤：显示文本 → TTS播报 → 提示音 → 麦克风动画 → 语音识别 → 返回结果
+   * REQ0.2 优化：播报结束后播放"滴"提示音，麦克风闪烁动画
+   * @param promptText 提示文本
+   * @param defaultResult 默认结果
+   * @param parseMedicine 是否进行药品解析（Step 1问药品名时为true，其他步骤为false）
+   */
+  private async voiceStep(promptText: string, defaultResult: string, parseMedicine: boolean = true): Promise<string> {
+    // 1. 显示提示文本
+    this.showPrompt(promptText);
+
+    // 2. TTS 播报（文本持续显示）
+    await this.voice.speak(promptText);
+
+    // 3. 启动麦克风动画和"请说话"提示（REQ0.2）
+    this.showMicAnimation = true;
+    this.showBeepHint = true;
+
+    // 4. 震动提示（REQ0.2）- 在ASR启动前震动，避免震动声被识别
+    this.vib(150);  // 震动 150ms
+
+    // 5. 等待震动完全结束（短延迟即可）
+    await this.waitMs(200);
+
+    // 6. 震动结束后再启动语音识别
+    const result = await this.voice.startRecognition(30000, parseMedicine);
+
+    // 7. 停止麦克风动画
+    this.showMicAnimation = false;
+    this.showBeepHint = false;
+
+    // 8. 返回识别结果
+    if (result.text) {
+      return result.text;
+    }
+    return defaultResult;
   }
 
   /**
@@ -379,61 +684,93 @@ struct Index {
     this.isListening = true;
 
     try {
-      // Step 1: 问药品名称
+      // Step 1: 问药品名称（需要药品解析）
       this.showPrompt('请说药品名称');
       await this.voice.speak('请说药品名称');
-      let result = await this.voice.startRecognition(15000);
 
-      if (result.text) {
-        this.medName = result.medicineName || result.text;
-        this.showPrompt('好的，' + this.medName);
-        await this.voice.speak('好的，' + this.medName);
-      } else {
-        this.medName = '药品';
-        this.showPrompt('使用默认名称：药品');
-        await this.voice.speak('没听清，药品名称设为药品');
-      }
+      // 启动麦克风动画
+      this.showMicAnimation = true;
+      this.showBeepHint = true;
 
-      // Step 2: 问一天吃几次
-      this.showPrompt('一天吃几次？');
-      await this.voice.speak('一天吃几次？');
-      result = await this.voice.startRecognition(15000);
+      // 震动提示（REQ0.2）- 在ASR启动前震动
+      this.vib(150);
 
-      if (result.text) {
-        this.medFrequency = this.parseFrequencyFromText(result.text);
-        this.showPrompt('好的，' + this.medFrequency);
-        await this.voice.speak('好的，' + this.medFrequency);
-      } else {
-        this.medFrequency = '一天一次';
-        this.showPrompt('默认：一天一次');
-        await this.voice.speak('没听清，默认一天一次');
-      }
+      // 等待震动结束
+      await this.waitMs(200);
 
-      // Step 3: 问一次吃多少
-      this.showPrompt('一次吃多少？');
-      await this.voice.speak('一次吃多少？');
-      result = await this.voice.startRecognition(15000);
+      // 震动结束后启动语音识别
 
-      if (result.text) {
-        this.medDosage = this.parseDosageFromText(result.text);
-        this.showPrompt('好的，一次' + this.medDosage);
-        await this.voice.speak('好的，一次' + this.medDosage);
-      } else {
-        this.medDosage = '1片';
-        this.showPrompt('默认：一次1片');
-        await this.voice.speak('没听清，默认一次一片');
-      }
+      const result1 = await this.voice.startRecognition(30000, true);  // parseMedicine=true
 
-      // Step 4: 确认并创建提醒
+      // 停止麦克风动画
+      this.showMicAnimation = false;
+      this.showBeepHint = false;
+
+      this.medName = result1.medicineName || result1.text || '药品';
+
+      // Step 1 确认：显示文本 → 等待TTS播报完成 → 停留让老人看清
+      this.showPrompt('好的，' + this.medName);
+      await this.voice.speak('好的，' + this.medName);
+      await this.waitMs(800);
+
+      // Step 2: 问一天吃几次（不需要药品解析）
+      let resultText = await this.voiceStep('一天吃几次？', '一天一次', false);  // parseMedicine=false
+      console.info('[Index] Step2 ASR result: ' + resultText);
+      this.medFrequency = this.parseFrequencyFromText(resultText);
+      console.info('[Index] Step2 parsed frequency: ' + this.medFrequency);
+
+      // Step 2 确认
+      this.showPrompt('好的，' + this.medFrequency);
+      await this.voice.speak('好的，' + this.medFrequency);
+      await this.waitMs(1000);
+
+      // Step 3: 问一次吃多少（不需要药品解析）
+      resultText = await this.voiceStep('一次吃多少？', '1片', false);  // parseMedicine=false
+      this.medDosage = this.parseDosageFromText(resultText);
+
+      // Step 3 确认
+      const dosageTts = this.dosageToTtsText(this.medDosage);
+      this.showPrompt('好的，一次' + this.medDosage);
+      await this.voice.speak('好的，一次' + dosageTts);
+      await this.waitMs(1000);
+
+      // Step 4: 最终确认并创建提醒
       const times = this.resolveTimesFromFrequency(this.medFrequency);
-      const confirmMsg = '已设置 ' + this.medName + '，' + this.medFrequency +
-                         (times.length > 1 ? '' : '，' + times[0] + '提醒') +
-                         '，每次' + this.medDosage;
 
-      this.showPrompt(confirmMsg);
-      await this.voice.speak('好的，' + confirmMsg);
+      // 检查通知权限
+      let notificationEnabled = false;
+      try {
+        notificationEnabled = await notificationManager.isNotificationEnabled();
+        console.info('[Index] Notification enabled before create: ' + notificationEnabled);
+      } catch (e) {
+        console.error('[Index] Check notification failed: ' + JSON.stringify(e));
+      }
 
-      // 为每个时间点创建提醒
+      if (!notificationEnabled) {
+        // 尝试请求通知权限
+        this.showPrompt('需要开启通知权限才能提醒您');
+        await this.voice.speak('需要开启通知权限才能提醒您');
+        await this.waitMs(500);
+
+        try {
+          // 尝试直接请求（某些设备支持）
+          await notificationManager.requestEnableNotification();
+          notificationEnabled = await notificationManager.isNotificationEnabled();
+          console.info('[Index] Notification after request: ' + notificationEnabled);
+        } catch (reqErr) {
+          console.warn('[Index] requestEnableNotification failed: ' + JSON.stringify(reqErr));
+        }
+
+        if (!notificationEnabled) {
+          // 仍然未开启，引导用户手动开启
+          this.showPrompt('请在设置中开启通知权限');
+          await this.voice.speak('请在设置中开启通知权限');
+          await this.waitMs(2000);
+          // 继续创建提醒（用户可能稍后开启）
+        }
+      }
+
+      // 创建提醒
       for (let i = 0; i < times.length; i++) {
         const t = times[i];
         try {
@@ -444,21 +781,29 @@ struct Index {
         }
       }
 
+      // 刷新列表
+      await this.loadList();
+
+      // REQ0.2: 播报确认
+      const dosageTtsFinal = this.dosageToTtsText(this.medDosage);
+      const confirmMsg = '已设置 ' + this.medName + '，' + this.medFrequency +
+                         (times.length > 1 ? '' : '，' + times[0] + '提醒') +
+                         '，每次' + this.medDosage;
+      const confirmMsgTts = '已设置 ' + this.medName + '，' + this.medFrequency +
+                         (times.length > 1 ? '' : '，' + times[0] + '提醒') +
+                         '，每次' + dosageTtsFinal;
+      this.showPrompt(confirmMsg);
+      await this.voice.speak(confirmMsgTts);
+
+      // 播报完成后等待
+      await this.waitMs(1000);
+      this.hidePrompt();
+
       // 清空临时数据
       this.medName = '';
       this.medImage = '';
       this.medFrequency = '';
       this.medDosage = '';
-
-      // 刷新列表
-      await this.loadList();
-      this.medName = '';
-      this.medImage = '';
-      this.medFrequency = '';
-      this.medDosage = '';
-
-      // 刷新列表
-      await this.loadList();
 
     } catch (e) {
       console.error('[Index] Voice dialog failed: ' + JSON.stringify(e));
@@ -472,54 +817,160 @@ struct Index {
    * 从语音文本解析频率
    */
   private parseFrequencyFromText(text: string): string {
-    if (text.includes('三次') || text.includes('3次')) {
-      return '一天三次';
-    }
-    if (text.includes('两次') || text.includes('2次') || text.includes('两回')) {
+    console.info('[Index] parseFrequencyFromText input: ' + text);
+
+    // ASR常见误识别优先处理
+    // "三例" - 用户说"两次"时ASR常见误识别
+    if (text.includes('三例') || text.includes('三类')) {
+      console.info('[Index] Matched: 两次 (ASR误识别: 三例/三类)');
       return '一天两次';
     }
-    if (text.includes('一次') || text.includes('1次') || text.includes('一回')) {
+
+    // "一力" - 用户说"一次"时ASR误识别成"两次"相关音
+    if (text.includes('一力') || text.includes('一例') || text.includes('一立')) {
+      console.info('[Index] Matched: 一次 (ASR误识别: 一力/一例/一立)');
       return '一天一次';
     }
+
+    // "依" - "一"的同音字误识别
+    if (text.includes('依') && !text.includes('依次')) {
+      // "依"单独出现可能是"一"的误识别
+      console.info('[Index] Note: 依 detected, may be 一');
+    }
+
+    // 三次：支持多种表达和ASR误识别
+    // 正常: "三次"、"3次"、"三回"
+    // 简短: "三"、"3"
+    // ASR误识别: "安次"、"散次"（"三"的同音字误识别）
+    if (text.includes('三次') || text.includes('3次') || text.includes('三回') ||
+        text.includes('安次') || text.includes('散次') || text.includes('伞次') ||
+        text === '三' || text === '3' || text === '三个' || text === '三遍' ||
+        /安.*次/.test(text) || /散.*次/.test(text) || /伞.*次/.test(text)) {
+      console.info('[Index] Matched: 三次');
+      return '一天三次';
+    }
+
+    // 两次：支持多种表达和ASR误识别
+    // 正常: "两次"、"2次"、"两回"
+    // 简短: "两"、"2"、"二"
+    // ASR误识别: "两类"、"两力"、"俩次"
+    if (text.includes('两次') || text.includes('2次') || text.includes('两回') ||
+        text.includes('二次') || text.includes('二回') ||
+        text.includes('两类') || text.includes('两力') || text.includes('两立') ||
+        text.includes('俩次') || text.includes('俩例') ||
+        text === '两' || text === '2' || text === '二' ||
+        text === '俩' || text === '两个' || text === '两遍' ||
+        /2.*次/.test(text) || /两.*次/.test(text) || /二.*次/.test(text)) {
+      console.info('[Index] Matched: 两次');
+      return '一天两次';
+    }
+
+    // 一次：支持多种表达
+    // 正常: "一次"、"1次"、"一回"
+    // 简短: "一"、"1"
+    // ASR误识别: "依次"、"医次"
+    if (text.includes('一次') || text.includes('1次') || text.includes('一回') ||
+        text.includes('依次') || text.includes('医次') ||
+        text === '一' || text === '1' || text === '一个' || text === '一遍') {
+      console.info('[Index] Matched: 一次');
+      return '一天一次';
+    }
+
     // 默认
+    console.info('[Index] No match, using default: 一天一次');
     return '一天一次';
   }
 
   /**
-   * 从语音文本解析剂量
+   * 从语音文本解析剂量（统一输出阿拉伯数字）
    */
   private parseDosageFromText(text: string): string {
-    // 定义匹配模式接口
-    interface DosagePattern {
-      pattern: RegExp;
-      value: string;
+    console.info('[Index] parseDosageFromText input: ' + text);
+    console.info('[Index] parseDosageFromText input length: ' + text.length + ', chars: ' + Array.from(text).join(','));
+
+    // 中文数字到阿拉伯数字的映射
+    const chineseToNumber: Record<string, string> = {
+      '半': '0.5', '一': '1', '二': '2', '两': '2', '三': '3', '四': '4', '五': '5',
+      '六': '6', '七': '7', '八': '8', '九': '9', '十': '10'
+    };
+
+    // 支持的单位
+    const units = ['片', '颗', '粒', '袋', '包', '勺', '支', '丸', '滴', '个', '瓶'];
+
+    // 0. ASR常见误识别优先处理 - "二X" → 用户说"两X"时ASR常见误识别
+    // 全面覆盖所有单位，确保"二"统一转换为阿拉伯数字"2"
+    let correctedInput = text;
+    const erCorrectionUnits = ['片', '颗', '粒', '袋', '包', '勺', '支', '丸', '滴', '个', '瓶'];
+    for (const unit of erCorrectionUnits) {
+      const erPattern = '二' + unit;
+      if (correctedInput.includes(erPattern)) {
+        correctedInput = correctedInput.replace(erPattern, '2' + unit);
+        console.info('[Index] Corrected: 二' + unit + ' -> 2' + unit + ' in ' + text);
+      }
+    }
+    text = correctedInput;
+
+    // "一片" → 可能是"两片"的误识别（"两"和"一"在某些口音下相似）
+    // 如果后续数字解析失败返回默认值，可能是这个误识别
+    // 添加纠错规则：用户说"两片"时ASR可能识别成"一片"
+    if (text === '一片' || text.includes('一片')) {
+      // 暂时只做标记，不强制纠错，让后续逻辑处理
+      console.info('[Index] Note: 一片 may be 两片 (ASR误识别)');
     }
 
-    // 匹配各种剂量表达
-    const patterns: DosagePattern[] = [
-      { pattern: /半片/, value: '半片' },
-      { pattern: /一片|1片|一粒|1粒/, value: '1片' },
-      { pattern: /两片|2片|两粒|2粒/, value: '2片' },
-      { pattern: /三片|3片|三粒|3粒/, value: '3片' },
-      { pattern: /四片|4片|四粒|4粒/, value: '4片' },
-      { pattern: /一袋|1袋/, value: '1袋' },
-      { pattern: /两袋|2袋/, value: '2袋' },
-      { pattern: /一勺|1勺/, value: '1勺' },
-      { pattern: /两勺|2勺/, value: '2勺' }
-    ];
+    // "二片" → 用户说"两片"时ASR误识别
+    if (text.includes('二片')) {
+      text = text.replace('二片', '2片');
+      console.info('[Index] Corrected: 二片 -> 2片 in ' + text);
+    }
 
-    for (const p of patterns) {
-      if (p.pattern.test(text)) {
-        return p.value;
+    // "一片" "两片" 等数量词纠错 - 如果用户说"5粒"被识别成其他
+    // 检查是否有"五粒"相关的误识别
+    if (text.includes('五例') || text.includes('武力') || text.includes('雾里')) {
+      console.info('[Index] Corrected: ' + text + ' -> 5粒');
+      return '5粒';
+    }
+
+    // "例" → 可能是"两粒"的误识别
+    // "力" → 可能是"两粒"的误识别
+    if (text === '例' || text === '两例' || text === '三例') {
+      console.info('[Index] Matched: 2粒 (ASR误识别)');
+      return '2粒';
+    }
+    if (text.includes('力') && !text.includes('粒')) {
+      console.info('[Index] Matched: 2粒 (ASR误识别: 力)');
+      return '2粒';
+    }
+
+    // "代" → "袋" 的同音字纠错
+    // 用户说"一袋"，ASR识别成"一代"
+    const correctedText = text.replace(/代/g, '袋');
+    if (correctedText !== text) {
+      console.info('[Index] Corrected ASR: ' + text + ' -> ' + correctedText);
+      text = correctedText;
+    }
+
+    // 1. 匹配 "数字+单位" 格式（已经是阿拉伯数字）
+    const digitMatch = text.match(/(\d+(?:\.\d+)?)\s*(片|颗|粒|袋|包|勺|支|丸|滴|个|瓶)/);
+    if (digitMatch) {
+      return digitMatch[1] + digitMatch[2];
+    }
+
+    // 2. 匹配 "中文数字+单位" 格式
+    const chineseNums = ['半', '一', '二', '两', '三', '四', '五', '六', '七', '八', '九', '十'];
+    for (const unit of units) {
+      for (const cn of chineseNums) {
+        const pattern = cn + unit;
+        const matched = text.includes(pattern);
+        if (matched) {
+          console.info('[Index] Matched pattern: ' + pattern + ' -> ' + chineseToNumber[cn] + unit);
+          return chineseToNumber[cn] + unit;
+        }
       }
     }
 
-    // 尝试提取数字+单位
-    const match = text.match(/(\d+|一|二|三|四|五)(片|粒|袋|勺|颗)/);
-    if (match) {
-      return match[0];
-    }
-
+    // 未匹配到，记录所有尝试
+    console.warn('[Index] No dosage pattern matched, returning default 1片');
     return '1片';
   }
 
@@ -539,29 +990,55 @@ struct Index {
   }
 
   /**
-   * 长按拍照按钮触发语音识别
+   * 将剂量转换为适合TTS朗读的中文格式
+   * TTS会将阿拉伯数字读成"一、二、三"，对于数量词应该用"一、两、三"更自然
+   * 例如: "2颗" → "两颗", "3颗" → "三颗"
+   */
+  private dosageToTtsText(dosage: string): string {
+    // 阿拉伯数字到中文数字的映射（用于数量词）
+    // 注意：1读"一"，2读"两"，其他读原字
+    const numToTts: Record<string, string> = {
+      '0.5': '半',
+      '1': '一',
+      '2': '两',
+      '3': '三',
+      '4': '四',
+      '5': '五',
+      '6': '六',
+      '7': '七',
+      '8': '八',
+      '9': '九',
+      '10': '十'
+    };
+
+    // 匹配数字+单位的格式
+    const match = dosage.match(/^(\d+(?:\.\d+)?)\s*(.+)$/);
+    if (match) {
+      const num = match[1];
+      const unit = match[2];
+      const chineseNum = numToTts[num];
+      if (chineseNum) {
+        return chineseNum + unit;
+      }
+      // 如果不在映射表中，返回原值
+      return dosage;
+    }
+    return dosage;
+  }
+
+  /**
+   * 长按拍照按钮触发语音识别（多轮对话流程）
    */
   private async startVoiceInput(): Promise<void> {
     if (this.isListening) return;
-    this.isListening = true;
     this.vib(100);  // 震动提示开始录音
 
-    try {
-      await this.voice.speak('请说药品名称和时间');
+    // 长按没有图片，清空 medImage
+    this.medImage = '';
 
-      const result = await this.voice.startRecognition(30000);
-
-      if (result.success && result.medicineName) {
-        await this.processVoiceResult(result);
-      } else if (result.error !== '取消') {
-        await this.voice.speak(result.error || '没有听清，请重试');
-      }
-    } catch (e) {
-      console.error('[Index] Voice input failed: ' + JSON.stringify(e));
-      await this.voice.speak('语音识别失败，请重试');
-    }
-
-    this.isListening = false;
+    // 使用和点击拍照相同的多轮对话流程
+    // 注意：isListening 由 startVoiceDialogFlow 内部管理
+    await this.startVoiceDialogFlow();
   }
 
   /**
@@ -668,6 +1145,22 @@ struct Index {
     this.deleteId = '';
   }
 
+  /**
+   * 根据药品名称字数动态调整字号
+   * ≤4 字: 34px
+   * 5-6 字: 28px
+   * 7-8 字: 24px
+   * >8 字: 20px
+   */
+  private getMedicineNameFontSize(name: string): number {
+    const len = name.length;
+    if (len <= 4) return 34;
+    if (len <= 6) return 28;
+    if (len <= 8) return 22;   // 7-8字：22px（进一步减小）
+    if (len <= 10) return 18;  // 9-10字：18px
+    return 16;                 // >10字：16px（最小字号）
+  }
+
   private vib(ms: number): void {
     try { vibrator.vibrate(ms); } catch (e) {}
   }
@@ -693,6 +1186,93 @@ struct Index {
     .padding(32)
     .backgroundColor(COLORS.cardBg)
     .borderRadius(24)
+  }
+
+  // ==================== 相机权限引导弹窗（用户之前拒绝过，提供相册选项）====================
+
+  @Builder
+  private cameraGuideDialog() {
+    Column({ space: 24 }) {
+      Text('📷')
+        .fontSize(48)
+      Text('需要相机权限')
+        .fontSize(32)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(COLORS.textBlack)
+      Text('您之前拒绝了相机权限，可使用相册选择药品图片')
+        .fontSize(24)
+        .fontColor(COLORS.textGray)
+        .textAlign(TextAlign.Center)
+
+      Button('相册')
+        .fontSize(28)
+        .fontColor('#FFFFFF')
+        .backgroundColor(COLORS.cameraButton)
+        .width('100%')
+        .height(64)
+        .onClick(() => {
+          this.showCameraGuide = false;
+          this.isCapturing = true;
+          void this.openPhotoPicker();
+        })
+    }
+    .width('85%')
+    .padding(32)
+    .backgroundColor(COLORS.cardBg)
+    .borderRadius(24)
+  }
+
+  // ==================== 闹铃弹窗 ====================
+
+  @Builder
+  private alarmDialog() {
+    Column({ space: 24 }) {
+      Text('⏰')
+        .fontSize(64)
+
+      Text('用药时间到了！')
+        .fontSize(36)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(COLORS.textBlack)
+
+      if (this.alarmReminder) {
+        Text(this.alarmReminder.medicineName)
+          .fontSize(40)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(COLORS.cameraButton)
+
+        Text(this.alarmReminder.dosage)
+          .fontSize(28)
+          .fontColor(COLORS.textGray)
+      }
+
+      Text('请按时服药')
+        .fontSize(24)
+        .fontColor(COLORS.textHint)
+
+      Button('OK')
+        .fontSize(32)
+        .fontColor('#FFFFFF')
+        .backgroundColor(COLORS.statusGreen)
+        .width('100%')
+        .height(70)
+        .onClick(() => {
+          this.showAlarmDialog = false;
+          // 清除静态变量
+          Index.activeAlarmId = '';
+          Index.activeAlarmName = '';
+          Index.activeAlarmDosage = '';
+          // 停止闹铃
+          if (this.alarmReminder) {
+            this.reminder.stopAlarm(this.alarmReminder.id);
+          }
+          this.vib(50);
+        })
+    }
+    .width('90%')
+    .padding(40)
+    .backgroundColor(COLORS.cardBg)
+    .borderRadius(32)
   }
 
   // ==================== 提醒卡片 ====================
@@ -731,7 +1311,7 @@ struct Index {
         // 名称右下 + 剂量在下，与图片间距10px
         Column({ space: 8 }) {
           Text(r.medicineName)
-            .fontSize(34)
+            .fontSize(this.getMedicineNameFontSize(r.medicineName))
             .fontColor(COLORS.textBlack)
           Text(r.dosage)
             .fontSize(25)
@@ -872,9 +1452,44 @@ struct Index {
         .height('100%')
         .backgroundColor('#80000000')
       }
+      // REQ0.2: 麦克风动画 + 提示"请说话"
+      if (this.showMicAnimation) {
+        Column() {
+          Blank()
+          Column({ space: 20 }) {
+            // 麦克风图标（闪烁动画）
+            Text('🎤')
+              .fontSize(80)
+              .opacity(this.showBeepHint ? 1.0 : 0.5)
+            // 提示文字
+            if (this.showBeepHint) {
+              Text('请说话')
+                .fontSize(32)
+                .fontColor('#FFFFFF')
+                .fontWeight(FontWeight.Bold)
+            }
+          }
+          .justifyContent(FlexAlign.Center)
+          .alignItems(HorizontalAlign.Center)
+          Blank()
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#40000000')
+      }
       if (this.showDelete) {
         Column() { Blank(); this.deleteDialog(); Blank(); }
           .width('100%').height('100%').backgroundColor('#80000000')
+      }
+      // 相机权限引导弹窗
+      if (this.showCameraGuide) {
+        Column() { Blank(); this.cameraGuideDialog(); Blank(); }
+          .width('100%').height('100%').backgroundColor('#80000000')
+      }
+      // 闹铃弹窗
+      if (this.showAlarmDialog) {
+        Column() { Blank(); this.alarmDialog(); Blank(); }
+          .width('100%').height('100%').backgroundColor('#CC000000')
       }
     }
     .width('100%')

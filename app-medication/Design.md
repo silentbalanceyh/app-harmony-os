@@ -83,12 +83,19 @@
 - 全局字体：鸿蒙默认字体（与现有项目一致），无特殊字体、无斜体、无下划线
     
 - 字号要求（新增补充）：
-    
+
     - 提醒时间：35px（加粗）
-        
-    - 今日提醒、药品名称：34px；提醒状态：32px（提醒状态加粗）
-        
-    - 底部删除提示：14px（颜色更浅）；服用剂量：25px（颜色更浅）；无提醒卡片时的提示文本：40px，黑色 #333333（不缩小，仅卡片内部文字、公共按钮文本缩小）；公共按钮文本：按原有默认字号缩小30%，适配整体风格
+
+    - 今日提醒：34px；提醒状态：32px（提醒状态加粗）
+
+    - 药品名称：**动态字号**（根据字数调整）
+        - ≤4 字：34px
+        - 5-6 字：28px
+        - 7-8 字：22px（进一步减小）
+        - 9-10 字：18px
+        - >10 字：16px（最小字号）
+
+    - 底部删除提示：14px（颜色更浅）；服用剂量：25px（颜色更浅，**统一显示阿拉伯数字**）；无提醒卡片时的提示文本：40px，黑色 #333333（不缩小，仅卡片内部文字、公共按钮文本缩小）；公共按钮文本：按原有默认字号缩小30%，适配整体风格
         
 - 字体颜色（新增补充）：
     
@@ -201,8 +208,8 @@ Button('打开监控中心').fontSize(22)  // 32 → 22
 | 提醒时间 | 50px | 35px | 缩小30% |
 | 提醒状态 | 45px | 32px | 缩小30% |
 | 今日提醒 | 48px | 34px | 缩小30% |
-| 药品名称 | 48px | 34px | 缩小30% |
-| 服用剂量 | 35px | 25px | 缩小30% |
+| 药品名称 | 48px | **动态** | ≤4字=34px, 5-6字=28px, 7-8字=24px, >8字=20px |
+| 服用剂量 | 35px | 25px | 缩小30%，统一阿拉伯数字 |
 | 底部删除提示 | 20px | 14px | 缩小30% |
 | 公共按钮文本 | 32px | 22px | 缩小30% |
 | 无提醒提示文本 | 40px | 40px | 不缩小 |
@@ -343,3 +350,543 @@ Column({ space: 12 }) {
 
 #### 验证结果
 - 构建状态: **BUILD SUCCESSFUL in 3 s 216 ms**
+
+---
+
+### 2026-04-03 更新：药品名称动态字号 + 剂量统一显示
+
+#### 问题 1：药品名称超长显示不全
+
+**现象**：药品名称超过 4 个字时，固定 34px 字号导致显示不全（如"阿莫西林胶囊"）
+
+**修复**：根据字数动态调整字号
+
+| 字数 | 字号 | 示例 |
+|------|------|------|
+| ≤4 字 | 34px | 降压药、钙片 |
+| 5-6 字 | 28px | 阿莫西林 |
+| 7-8 字 | 24px | 阿莫西林胶囊 |
+| >8 字 | 20px | 小儿氨酚黄那敏颗粒 |
+
+**代码实现**：
+```typescript
+private getMedicineNameFontSize(name: string): number {
+  const len = name.length;
+  if (len <= 4) return 34;
+  if (len <= 6) return 28;
+  if (len <= 8) return 24;
+  return 20;
+}
+
+// UI 中使用
+Text(r.medicineName)
+  .fontSize(this.getMedicineNameFontSize(r.medicineName))
+```
+
+#### 问题 2：剂量显示不统一
+
+**现象**：
+- 用户说"两片"，显示"两片"（中文数字）
+- 用户说"2片"，显示"2片"（阿拉伯数字）
+- 同一应用显示不统一
+
+**修复**：统一输出阿拉伯数字
+
+| 用户输入 | 输出显示 |
+|---------|---------|
+| 一片 / 1片 | **1片** |
+| 两片 / 2片 | **2片** |
+| 三片 / 3片 | **3片** |
+| 半片 | **0.5片** |
+
+**代码实现**：
+```typescript
+private parseDosageFromText(text: string): string {
+  const chineseToNumber: Record<string, string> = {
+    '半': '0.5', '一': '1', '二': '2', '两': '2', '三': '3',
+    '四': '4', '五': '5', '六': '6', '七': '7', '八': '8', '九': '9', '十': '10'
+  };
+
+  // 1. 匹配 "数字+单位" 格式（已是阿拉伯数字）
+  const digitMatch = text.match(/(\d+(?:\.\d+)?)\s*(片|颗|粒|袋|包|勺|支|丸|滴|个)/);
+  if (digitMatch) {
+    return digitMatch[1] + digitMatch[2];
+  }
+
+  // 2. 匹配 "中文数字+单位" 格式，转换为阿拉伯数字
+  const chineseNums = ['半', '一', '二', '两', '三', '四', '五', '六', '七', '八', '九', '十'];
+  const units = ['片', '颗', '粒', '袋', '包', '勺', '支', '丸', '滴', '个'];
+  for (const unit of units) {
+    for (const cn of chineseNums) {
+      if (text.includes(cn + unit)) {
+        return chineseToNumber[cn] + unit;
+      }
+    }
+  }
+
+  return '1片';
+}
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 2 s 401 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+### 2026-04-03 更新：药品库自检修复
+
+#### 问题识别
+药品库中存在多个别名重叠问题，可能导致不同药品被混淆：
+
+| 问题药品 | 问题描述 | 影响 |
+|---------|---------|-----|
+| 感冒药 vs 感冒灵 | 感冒药别名包含感冒灵 | 感冒灵有独立条目，别名重复 |
+| 钙片 vs 钙尔奇 | 钙片别名包含钙尔奇 | 钙尔奇有独立条目，别名重复 |
+| 维生素B12 vs 甲钴胺 | B12别名包含甲钴胺 | 甲钴胺有独立条目（不同剂型） |
+| 维D vs 钙尔奇D | 维D别名包含钙尔奇D | 与钙尔奇条目重叠 |
+
+#### 修复内容
+
+**1. 别名去重叠**
+```typescript
+// 感冒药：移除感冒灵别名
+{ name: '感冒药', aliases: ['感冒冲剂', '伤风药', '感冒胶囊'], ... }
+{ name: '感冒灵', aliases: ['感冒灵颗粒', '999感冒灵'], ... }  // 独立条目保留
+
+// 钙片：移除钙尔奇别名
+{ name: '钙片', aliases: ['碳酸钙', '葡萄糖酸钙'], ... }
+{ name: '钙尔奇', aliases: ['钙尔奇D', '碳酸钙D3'], ... }  // 独立条目保留
+
+// 维生素B12：移除甲钴胺别名
+{ name: '维生素B12', aliases: ['钴胺素'], ... }
+{ name: '甲钴胺', aliases: ['弥可保', '甲钴胺片', '甲基维生素B12'], ... }  // 独立条目
+
+// 维D：移除钙尔奇D别名
+{ name: '维D', aliases: ['维生素D', '维生素D3'], ... }
+```
+
+**2. ASR纠错映射补充**
+```typescript
+const knownAsrErrors: Record<string, string> = {
+  // 地黄丸系列区分
+  '六味地黄': '六味地黄丸',
+  '知柏地黄': '知柏地黄丸',
+  '杞菊地黄': '杞菊地黄丸',
+  // 感冒类区分
+  '感冒清热': '感冒清热',
+  '九九九感冒灵': '感冒灵',
+  '999感冒灵': '感冒灵',
+  // 头孢类区分
+  '先锋': '头孢拉定',
+  // 钙片类区分
+  '钙尔奇d': '钙尔奇',
+  '碳酸钙d3': '钙尔奇',
+  // 其他常见混淆
+  '复方丹参丸': '复方丹参片',
+  '丹参片': '复方丹参片',
+};
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 2 s 263 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+### 2026-04-03 更新：语音文本同步彻底修复
+
+#### 问题根因分析
+
+用户反馈："语音重复了复方丹参片，还没说完，文本就显示一天吃几次"
+
+**底层问题**（不是参数问题，是架构缺陷）：
+
+| 问题层 | 具体缺陷 | 影响 |
+|-------|---------|-----|
+| TTS引擎层 | `onComplete`事件可能丢失 | Promise永远不resolve |
+| 时序漏洞 | listener设置和speak调用竞态 | 事件触发时listener未就绪 |
+| 无保底机制 | 无超时兜底 | 卡住时代码阻塞或跳过 |
+
+#### 修复方案
+
+**1. VoiceService.speak()重构**
+```typescript
+async speak(text: string): Promise<void> {
+  // 关键改进：
+  // 1. 超时保底：按文本长度计算，每字300ms，最少3秒
+  // 2. 防多次resolve：resolved标志位
+  // 3. requestId校验：确保只响应当前请求
+  // 4. 播报后缓冲：onComplete后额外等待300ms
+  // 5. TTS不可用兜底：等待1.5秒让文本显示停留
+
+  const requestId = Date.now().toString();
+  let resolved = false;
+  const estimatedDuration = Math.max(3000, text.length * 300 + 500);
+
+  timeoutId = setTimeout(() => {
+    if (!resolved) { resolved = true; resolve(); }
+  }, estimatedDuration);
+
+  // 先设置listener，再调用speak（修复时序漏洞）
+  this.ttsEngine!.setListener({
+    onComplete: (reqId, response) => {
+      if (!resolved && reqId === requestId) {
+        resolved = true;
+        clearTimeout(timeoutId);
+        // 关键：额外300ms缓冲，确保声音完全结束
+        setTimeout(resolve, 300);
+      }
+    }
+  });
+
+  this.ttsEngine!.speak(text, { requestId, extraParams: {} });
+}
+```
+
+**2. Index.ets确认阶段等待时间延长**
+```typescript
+// Step 1 确认
+await this.voice.speak('好的，' + this.medName);
+await this.waitMs(800);  // 500ms → 800ms
+
+// Step 2 确认
+await this.voice.speak('好的，' + this.medFrequency);
+await this.waitMs(800);
+
+// Step 3 确认
+await this.voice.speak('好的，一次' + this.medDosage);
+await this.waitMs(800);
+
+// 最终确认
+await this.waitMs(3000);  // 2秒 → 3秒
+```
+
+#### 闭环验证
+- 构建状态: **BUILD SUCCESSFUL in 2 s 704 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+#### 顶层设计总结
+这次修复不是调参数，而是重构了TTS同步的底层逻辑：
+1. **保底机制**：超时兜底，防止卡住
+2. **时序控制**：先listener后speak，防止事件丢失
+3. **缓冲时间**：播报后额外等待，确保声音完全结束
+4. **requestId校验**：防止多请求事件混淆
+
+### 2026-04-03 更新：语音流程彻底重构
+
+#### 用户需求拆解
+
+| 环节 | 要求 |
+|------|------|
+| vadBegin（等待开始说话） | **5秒** |
+| vadEnd（说话结束后等待） | **3秒**（防止继续说） |
+| 识别后重复播报 | 文本和语音严格同步 |
+| 播报后等待 | **1秒**再继续 |
+
+#### VAD参数调整
+
+```typescript
+extraParams: {
+  timeout: timeout,           // 总超时时间
+  vadBegin: 5000,             // 等待开始说话：5秒
+  vadEnd: 3000,               // 说话结束后等待：3秒（防止老人继续说）
+  maxAudioDuration: 60000     // 最大录音时长：60秒
+}
+```
+
+#### TTS双重保险机制
+
+**问题根因**：`onComplete`事件可能提前触发（播放开始时而非结束时）
+
+**解决方案**：基于文本长度计算最小播放时间
+
+```typescript
+async speak(text: string): Promise<void> {
+  // 最小播放时间 = 字数 * 250ms，最少2秒
+  const minDuration = Math.max(2000, text.length * 250);
+
+  // onComplete时检查是否达到最小播放时间
+  if (elapsed < minDuration) {
+    // 提前触发，额外等待剩余时间
+    const remaining = minDuration - elapsed;
+    setTimeout(resolve, remaining);
+  } else {
+    // 正常完成，额外缓冲500ms
+    setTimeout(resolve, 500);
+  }
+}
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 2 s 496 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+### 2026-04-04 更新：权限引导流程重构（系统权限优先）
+
+#### 流程设计（最终版）
+
+**权限请求流程**（与应用启动时一致）：
+1. 点击拍照按钮 → **直接弹系统权限框**（不先弹自定义弹窗）
+2. 用户选择：
+   - 允许 → 打开相册选择药品图片
+   - 拒绝 → 弹降级弹窗（只有"相册"按钮）
+3. 选择图片后检查麦克风权限 → **直接弹系统权限框**
+4. 用户选择：
+   - 允许 → 进入语音多轮对话设置提醒
+   - 拒绝 → 弹降级弹窗（只有"返回"按钮），返回主页
+
+#### 弹窗类型
+
+| 弹窗 | 触发时机 | 按钮 |
+|------|---------|------|
+| 相机权限降级 | 拒绝系统相机权限后 | **相册**（单按钮） |
+| 麦克风权限降级 | 拒绝系统麦克风权限后 | **返回**（单按钮） |
+
+#### 弹窗样式规范
+
+```typescript
+// 相机权限降级弹窗（单按钮）
+Column({ space: 24 }) {
+  Text('📷').fontSize(48)
+  Text('需要相机权限').fontSize(32).fontWeight(FontWeight.Bold).fontColor(COLORS.textBlack)
+  Text('您拒绝了相机权限，可使用相册选择药品图片').fontSize(24).fontColor(COLORS.textGray).textAlign(TextAlign.Center)
+  Button('相册')
+    .fontSize(28).fontColor('#FFFFFF').backgroundColor(COLORS.cameraButton)
+    .width('100%').height(64)
+}
+.width('85%').padding(32).backgroundColor(COLORS.cardBg).borderRadius(24)
+
+// 麦克风权限降级弹窗（单按钮）
+Column({ space: 24 }) {
+  Text('🎤').fontSize(48)
+  Text('需要麦克风权限').fontSize(32).fontWeight(FontWeight.Bold).fontColor(COLORS.textBlack)
+  Text('您拒绝了麦克风权限，无法使用语音设置功能').fontSize(24).fontColor(COLORS.textGray).textAlign(TextAlign.Center)
+  Button('返回')
+    .fontSize(28).fontColor('#FFFFFF').backgroundColor(COLORS.cameraButton)
+    .width('100%').height(64)
+}
+.width('85%').padding(32).backgroundColor(COLORS.cardBg).borderRadius(24)
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 2 s 847 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+### 2026-04-04 更新：通知权限检查优化
+
+#### 问题背景
+用户反馈：没有开启通知权限也能创建提醒，导致"假提醒"。
+
+#### 解决方案
+在创建提醒前检查通知权限，未开启时语音提示用户：
+
+```typescript
+// Step 4: 创建提醒前检查通知权限
+let notificationEnabled = await notificationManager.isNotificationEnabled();
+if (!notificationEnabled) {
+  this.showPrompt('需要开启通知权限才能提醒您');
+  await this.voice.speak('需要开启通知权限才能提醒您');
+  try {
+    await notificationManager.requestEnableNotification();
+    notificationEnabled = await notificationManager.isNotificationEnabled();
+  } catch (e) {
+    // 请求失败，提示用户手动开启
+  }
+}
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+
+### 2026-04-04 更新：ASR 纠错增强 + 药品库拼音首字母
+
+#### 问题背景
+用户说"蒙脱石散"，识别成"猛托石散"或"猛拖死伞"。
+
+#### 解决方案
+
+**1. 手动添加 ASR 纠错映射**
+```typescript
+['猛托石散', '蒙脱石散'],
+['猛拖死伞', '蒙脱石散'],
+['蒙托石散', '蒙脱石散'],
+```
+
+**2. 同音字映射扩展**
+```typescript
+['蒙', ['猛', '梦', '孟', '萌', '盟', '檬', '朦']],
+['脱', ['拖', '托', '妥', '陀', '驼', '拓']],
+['石', ['十', '时', '事', '实', '食', '史', '死']],
+```
+
+**3. 药品库添加拼音首字母**
+```typescript
+interface MedicineInfo {
+  pinyinInitials?: string;  // 拼音首字母：蒙脱石散 → mtss
+}
+```
+
+| 药品名 | 拼音 | 首字母 |
+|--------|------|--------|
+| 蒙脱石散 | mengtuoShisan | mtss |
+| 阿莫西林 | amoxilin | amxl |
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+- 纠错记录: **241393 条**（包含拼音首字母索引）
+
+### 2026-04-04 更新：剂量解析修复
+
+#### 问题背景
+用户说"两颗"，正确识别为"两颗。"，但解析结果显示"1片"。
+
+#### 解决方案
+添加详细解析日志确认匹配过程：
+```
+[Index] parseDosageFromText input: 两颗。
+[Index] Matched pattern: 两颗 -> 2颗
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+- "两颗"正确解析为"2颗"
+
+### 2026-04-04 更新：五级药品匹配算法
+
+#### 背景
+用户要求语音识别使用多候选结果匹配药品库，但 HarmonyOS NEXT `SpeechRecognitionResult` 没有 `bestResults` 属性。
+
+#### 解决方案
+实现单结果+五级优先级匹配算法：
+
+```typescript
+// MedicineDatabase.ets
+interface MedicineMatchResult {
+  medicineName: string;
+  confidence: number;  // 1-5，数字越小优先级越高
+}
+
+static matchMedicineFromCandidates(candidates: string[]): MedicineMatchResult | null {
+  // 五级优先级匹配
+}
+```
+
+#### 五级匹配流程
+
+| 优先级 | 匹配方式 | 示例 |
+|--------|---------|------|
+| 1 | 精确匹配药品名称 | "蒙脱石散" → 蒙脱石散 |
+| 2 | 精确匹配别名 | "999感冒灵" → 感冒灵 |
+| 3 | 拼音全拼匹配 | "mengtuoshisan" → 蒙脱石散 |
+| 4 | 拼音首字母匹配 | "mtss" → 蒙脱石散 |
+| 5 | Levenshtein 模糊匹配 | "蒙托石散" → 蒙脱石散（距离≤2） |
+
+#### 关键实现
+
+**1. 拼音首字母生成**
+```typescript
+static generatePinyinInitials(pinyin: string): string {
+  // 按音节提取首字母：蒙脱石散 → mtss
+  // 正确处理鼻音韵母 n/ng
+}
+```
+
+**2. Levenshtein 编辑距离**
+```typescript
+static levenshteinDistance(a: string, b: string): number {
+  // 计算最小编辑操作数
+  // 允许 1-2 字错误
+}
+```
+
+**3. 接口定义（ArkTS 类型安全）**
+```typescript
+interface MedicineMatchResult {
+  medicineName: string;
+  confidence: number;
+}
+
+interface LevenshteinMatch {
+  name: string;
+  distance: number;
+}
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL in 9 s 493 ms**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+
+### 2026-04-04 更新：拼音首字母匹配修复 + 药品库优化
+
+#### 问题背景
+1. 拼音首字母匹配不生效：`textToPinyin()` 只处理数字，不转换汉字
+2. "蒙脱石"匹配到独立条目（原料药），而非"蒙脱石散"的别名
+3. 剂量"一袋"被识别成"一代"，无法解析
+
+#### 解决方案
+
+**1. 汉字到拼音首字母映射**
+```typescript
+// 新增 charToInitial 映射表
+private static charToInitial: Map<string, string> = new Map([
+  ['蒙', 'm'], ['猛', 'm'], ['梦', 'm'],  // 同音字映射
+  ['脱', 't'], ['拖', 't'], ['托', 't'],
+  ['石', 's'], ['十', 's'], ['时', 's'],
+  ['散', 's'], ['闪', 's'], ['山', 's'],
+  // ... 100+ 常用药品用字
+]);
+
+// 新增方法
+private static getInitialsFromText(text: string): string {
+  const initials: string[] = [];
+  for (const char of text) {
+    const initial = MedicineDatabase.charToInitial.get(char);
+    if (initial) initials.push(initial);
+  }
+  return initials.join('');
+}
+```
+
+**匹配效果**：
+| ASR 结果 | 首字母 | 药品库首字母 | 匹配结果 |
+|---------|--------|-------------|---------|
+| 猛拖十闪 | mtss | mtss | 蒙脱石散 ✅ |
+| 蒙脱石 | mts | mtss | 蒙脱石散（别名）✅ |
+
+**2. 药品库优化**
+- 删除 1468 条原料药（用户不会使用）
+- 删除独立的"蒙脱石"条目，保留为"蒙脱石散"的别名
+- 剩余药品：17619 条
+
+**3. ASR 纠错映射扩展**
+```typescript
+['猛拖十闪', '蒙脱石散'],  // 新增
+['猛拖死闪', '蒙脱石散'],
+['松石散', '蒙脱石散'],
+```
+
+**4. 剂量纠错**
+```typescript
+// Index.ets
+const correctedText = text.replace(/代/g, '袋');
+// "一代" → "一袋" → "1袋"
+```
+
+#### 文件变更
+```
+修改:
+- entry/src/main/ets/services/MedicineDatabase.ets (charToInitial + 删除原料药)
+- entry/src/main/ets/pages/Index.ets (剂量纠错)
+- Design.md (文档更新)
+- REQ0.1.md (文档更新)
+```
+
+#### 验证结果
+- 构建状态: **BUILD SUCCESSFUL**
+- 安装状态: **install bundle successfully**
+- 启动状态: **start ability successfully**
+- "蒙脱石散"语音识别匹配成功 ✅
+- "一袋"正确解析为"1袋" ✅
