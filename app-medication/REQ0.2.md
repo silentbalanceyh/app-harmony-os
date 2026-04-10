@@ -262,3 +262,134 @@
 1. **ASR引擎调优** - 需用户方提供调优方案
 2. **场景化语料训练** - 需引擎团队配合
 3. **播报期间提前录音缓存** - 需进一步调研 HarmonyOS ASR API
+
+---
+
+## 2026-04-10 平台检测规则修复
+
+### 问题背景
+
+本机为 Windows 系统，项目已存在完整的 `.bat` 脚本体系，但 Claude Code 会话启动时依据文档规则调用 `dev-start.sh`（macOS 路径格式），导致报错：
+
+```
+[ERROR] hdc not found: .../Contents/sdk/default/openharmony/toolchains/hdc
+```
+
+### 根因分析
+
+| 层面 | 问题 | 影响 |
+|------|------|------|
+| `AGENTS.md` | 强制规则".sh 是首选入口" | 会话首选入口被锁定 |
+| `.cursor/rules/*.mdc` | 三条规则文件全引用 `.sh` | 规则加载阶段固化决策 |
+| `settings.local.json` | 仅允许 `.sh` 权限 | `.bat` 脚本无执行权限 |
+
+完整分析见：`app-medication/WINDOWS-SCRIPT-CALL-ANALYSIS.md`
+
+### 已修复项 ✅
+
+1. **AGENTS.md**
+   - 新增 `Platform Detection` 章节，定义平台检测规则
+   - 修改 `Script Rules`：区分 Windows (.bat) 和 Unix (.sh)
+   - 修改 `Preferred Debug Entry Points`：分平台展示命令
+
+2. **`.cursor/rules/10-workspace-structure.mdc`**
+   - 新增 `Platform Detection` 章节
+   - 修改 `Root Rules` / `App Rules`：同时提及 `.sh` 和 `.bat`
+
+3. **`.cursor/rules/30-scripts-and-debug.mdc`**
+   - 新增 `Platform Detection` 章节
+   - 修改 `Primary Execution Path`：平台自适应
+   - 修改 `Preferred Debug Entry Points`：分 Windows / macOS/Linux
+
+4. **`.cursor/rules/50-app-initialization.mdc`**
+   - 修改 `Required App Skeleton`：增加 `.bat` 脚本要求
+   - 修改 `Verification Minimum`：平台自适应验证命令
+
+5. **CLAUDE.md**
+   - 修改 Goals：提及两个平台脚本
+   - 新增 `Quick Start (Windows)` 章节
+
+6. **`app-medication/.claude/settings.local.json`**
+   - 增加 `.bat` 脚本执行权限
+
+### 验证结果（平台检测规则修复）
+
+```cmd
+cmd.exe //c "call D:\\app-harmony-os\\app-medication\\dev-start.bat"
+
+[INFO]  "Checking DevEco tools..."
+[INFO]  "Checking for connected HarmonyOS device..."
+[OK]    "HarmonyOS simulator/device already connected"
+[INFO]  "Building app-medication (debug)..."
+```
+
+- ✅ `dev-start.bat` 正确调用
+- ✅ Windows 路径正确（无 `/Contents/` 目录）
+- ✅ DevEco 工具链检测通过
+- ✅ 设备连接检测通过
+- ⚠️ hvigor 构建报错：根目录缺少 `build-profile.json5`（项目结构问题，非本次修复范围）
+
+### 修改文件清单
+
+| 文件 | 变更说明 |
+|------|---------|
+| `AGENTS.md` | 新增 Platform Detection + 修改 Script Rules + 分平台 Debug Entry |
+| `.cursor/rules/10-workspace-structure.mdc` | 新增 Platform Detection + 同时提及 .bat/.sh |
+| `.cursor/rules/30-scripts-and-debug.mdc` | 新增 Platform Detection + 分平台命令示例 |
+| `.cursor/rules/50-app-initialization.mdc` | App Skeleton 增加 .bat + Verification 分平台 |
+| `CLAUDE.md` | Goals 修改 + 新增 Windows Quick Start |
+| `app-medication/.claude/settings.local.json` | 增加 .bat 脚本执行权限 |
+| `app-medication/WINDOWS-SCRIPT-CALL-ANALYSIS.md` | 问题分析文档（新建） |
+
+### Dev 环境启动验证（补全 build-profile.json5 后）
+
+首次运行因缺少根级 `build-profile.json5` 构建失败，从 `app-hello` 参照补建后重新执行：
+
+**执行命令：**
+
+```cmd
+cmd.exe //c "call D:\\app-harmony-os\\app-medication\\dev-start.bat"
+```
+
+**执行结果：**
+
+```
+[INFO]  "Checking DevEco tools..."
+[INFO]  "Checking for connected HarmonyOS device..."
+[OK]    "HarmonyOS simulator/device already connected"
+[INFO]  "Building app-medication (debug)..."
+> hvigor Finished :entry:default@CompileArkTS... after 36 s 352 ms
+> hvigor Finished ::PackageApp... after 780 ms
+> hvigor BUILD SUCCESSFUL in 1 min 20 s 663 ms
+[INFO]  "Checking device connection..."
+[OK]    "Device connected"
+[INFO]  "Installing: ...\entry-default.hap"
+[Info]App install path:...\entry-default.hap msg:install bundle successfully.
+[INFO]  "Launching app-medication..."
+start ability successfully.
+[OK]    "Dev start completed for app-medication"
+```
+
+**验证结论：**
+
+| 阶段 | 结果 |
+|------|------|
+| DevEco 工具链检测 | ✅ 通过 |
+| 设备连接检测 | ✅ 通过（模拟器已连接） |
+| 构建 (assembleApp) | ✅ BUILD SUCCESSFUL (1m20s) |
+| 安装 (hdc install) | ✅ install bundle successfully |
+| 启动 (aa start) | ✅ start ability successfully |
+
+**附带修复项：**
+
+| 文件 | 说明 |
+|------|------|
+| `app-medication/build-profile.json5` | 新建，参照 `app-hello` 模板，解决 hvigor 构建找不到项目配置的问题 |
+
+**ArkTS 编译警告（不影响运行）：**
+
+- `ReminderStore.ets`：多处理发可能抛异常的函数调用
+- `MedicineLoader.ets`：`getRawFile` 已标记 deprecated
+- `SoundEffectPlayer.ets`：多处理发可能抛异常的函数调用
+- `StrongReminderService.ets`：`backgroundTaskManager` 部分设备不支持、`vibrate`/`stop` 已 deprecated
+- `Index.ets`：`requestEnableNotification`、`PhotoViewPicker` 等已 deprecated

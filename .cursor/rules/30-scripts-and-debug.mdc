@@ -1,15 +1,22 @@
 # HarmonyOS Scripts And Debug Rules
 
+## Platform Detection
+
+- Detect platform via `uname -s`:
+  - `MINGW*` / `MSYS*` / `CYGWIN*` → Windows, use `.bat` scripts
+  - `Darwin` / `Linux` → Unix, use `.sh` scripts
+
 ## Primary Execution Path
 
-- First choice for local development is `cd <app> && ./dev-start.sh`.
-- Shared simulator bootstrap entry is `./start-simulator.sh`.
-- `dev-start.sh` should remain the default path before inventing custom launch flows.
+- On Windows, first choice for local development is `cd <app> && dev-start.bat`.
+- On macOS/Linux, first choice for local development is `cd <app> && ./dev-start.sh`.
+- Shared simulator bootstrap entry is `start-simulator.bat` (Windows) or `./start-simulator.sh` (Unix).
+- Do not invent custom launch flows before using the platform-appropriate `dev-start.*`.
 
 ## Script Rules
 
-- `dev-start.sh` and `run-start.sh` must check simulator/device connectivity first.
-- If no HarmonyOS target is connected, scripts should attempt root `start-simulator.sh`.
+- `dev-start.*` and `run-start.*` must check simulator/device connectivity first.
+- If no HarmonyOS target is connected, scripts should attempt root `start-simulator.*`.
 - Dependency installation behavior is controlled by per-app `app.json` through `dependsOn`.
 - Launch fan-out behavior is controlled by per-app `app.json` through `launchTargets`.
 
@@ -24,10 +31,22 @@
 
 ## Preferred Debug Entry Points
 
+### Windows
+
+- Build: `cd app-center && dev-build.bat`
+- Start: `cd app-center && dev-start.bat`
+- Stop hvigor processes: `cd app-center && dev-stop.bat`
+- Simulator bootstrap: `start-simulator.bat`
+
+### macOS / Linux
+
 - Build: `cd app-center && ./dev-build.sh`
 - Start: `cd app-center && ./dev-start.sh`
 - Stop hvigor processes: `cd app-center && ./dev-stop.sh`
 - Simulator bootstrap: `./start-simulator.sh`
+
+### Cross-Platform
+
 - Device list: `hdc list targets`
 - Ability state: `hdc shell aa dump --mission-list`
 - Package state: `hdc shell bm dump -a`

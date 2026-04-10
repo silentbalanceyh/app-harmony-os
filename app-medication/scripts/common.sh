@@ -14,9 +14,20 @@ APP_CONFIG="$APP_ROOT/app.json"
 WORKSPACE_ROOT="$(cd "$APP_ROOT/.." && pwd)"
 SIMULATOR_SCRIPT="$WORKSPACE_ROOT/start-simulator.sh"
 DEVECO_STUDIO_PATH="${DEVECO_STUDIO_PATH:-/Applications/DevEco-Studio.app}"
-DEVECO_HVIGORW="$DEVECO_STUDIO_PATH/Contents/tools/hvigor/bin/hvigorw"
-DEVECO_HDC="$DEVECO_STUDIO_PATH/Contents/sdk/default/openharmony/toolchains/hdc"
-DEVECO_SDK_ROOT="$DEVECO_STUDIO_PATH/Contents/sdk/default"
+
+# On Windows (Git Bash / MSYS), DevEco Studio layout has no Contents/ directory
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    _deveco_inner=""
+    ;;
+  *)
+    _deveco_inner="/Contents"
+    ;;
+esac
+
+DEVECO_HVIGORW="$DEVECO_STUDIO_PATH${_deveco_inner}/tools/hvigor/bin/hvigorw"
+DEVECO_HDC="$DEVECO_STUDIO_PATH${_deveco_inner}/sdk/default/openharmony/toolchains/hdc"
+DEVECO_SDK_ROOT="$DEVECO_STUDIO_PATH${_deveco_inner}/sdk/default"
 
 info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }

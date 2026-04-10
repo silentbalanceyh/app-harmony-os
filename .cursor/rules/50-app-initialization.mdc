@@ -33,7 +33,12 @@ Every initialized app must include at least:
 - `dev-start.sh`
 - `dev-stop.sh`
 - `run-start.sh`
+- `dev-build.bat`
+- `dev-start.bat`
+- `dev-stop.bat`
+- `run-start.bat`
 - `scripts/common.sh`
+- `scripts/common.bat`
 
 ## Preferred Initialization Method
 
@@ -78,9 +83,15 @@ When a new app is initialized:
 
 Initialization is not complete until these checks are attempted:
 
-- build the new app with `cd <new-app> && ./dev-build.sh`
-- build the center with `cd app-center && ./dev-build.sh`
-- if simulator/device is available, run `cd app-center && ./dev-start.sh`
+- build the new app:
+  - Unix: `cd <new-app> && ./dev-build.sh`
+  - Windows: `cd <new-app> && dev-build.bat`
+- build the center:
+  - Unix: `cd app-center && ./dev-build.sh`
+  - Windows: `cd app-center && dev-build.bat`
+- if simulator/device is available, start the center:
+  - Unix: `cd app-center && ./dev-start.sh`
+  - Windows: `cd app-center && dev-start.bat`
 - confirm the new app can at least be installed and managed through `app-center`
 
 If simulator or device verification is blocked, state that explicitly.
