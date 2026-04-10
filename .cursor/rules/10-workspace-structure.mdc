@@ -1,17 +1,25 @@
 # HarmonyOS Workspace Structure Rules
 
+## Platform Detection
+
+- This workspace supports both macOS/Linux and Windows.
+- Detect platform via `uname -s`:
+  - `MINGW*` / `MSYS*` / `CYGWIN*` → Windows
+  - `Darwin` / `Linux` → Unix
+- Use `.bat` scripts on Windows, `.sh` scripts on Unix.
+
 ## Root Rules
 
 - Do not restore `hvigorfile.ts`, `build-profile.json5`, `oh-package.json5`, or other HarmonyOS project files to repository root.
-- Keep root limited to documentation, `.r2mo/` material, `.cursor/rules/`, logs, and shared scripts such as `start-simulator.sh`.
+- Keep root limited to documentation, `.r2mo/` material, `.cursor/rules/`, logs, and shared scripts such as `start-simulator.sh` / `start-simulator.bat`.
 - Every real app must remain isolated inside its own top-level `app-*` directory.
 
 ## App Rules
 
 - Each `app-*` directory is a standalone HarmonyOS app project.
 - Each app must own its own `AppScope/`, `entry/`, `build-profile.json5`, `oh-package.json5`, `hvigorfile.ts`, and `app.json`.
-- Each app must provide `dev-build.sh`, `dev-start.sh`, `dev-stop.sh`, and `run-start.sh`.
-- Shared shell logic should stay inside each app’s `scripts/common.sh`.
+- Each app must provide `dev-build.sh`, `dev-start.sh`, `dev-stop.sh`, and `run-start.sh` (Unix) plus matching `.bat` variants (Windows).
+- Shared shell logic should stay inside each app’s `scripts/common.sh` (Unix) and `scripts/common.bat` (Windows).
 
 ## App Relationship Source Of Truth
 

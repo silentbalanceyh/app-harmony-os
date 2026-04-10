@@ -10,7 +10,7 @@ All actual build targets live in top-level `app-*` directories.
 
 - Keep each HarmonyOS app independently buildable and installable.
 - Preserve a clean root directory with no restored legacy project files.
-- Make `dev-start.sh` enough for most local development workflows.
+- Make `dev-start.sh` (macOS/Linux) or `dev-start.bat` (Windows) enough for most local development workflows.
 - Allow a new session to understand the workspace quickly without reverse engineering the repo layout.
 
 ## When To Use App Initialization Flow
@@ -19,13 +19,22 @@ Use the dedicated initialization flow in `.cursor/rules/50-app-initialization.md
 
 Do not use that flow for normal edits inside an existing app unless the task also changes workspace-level app registration or app inventory.
 
-## Quick Start
+## Quick Start (macOS / Linux)
 
 ```bash
 ./start-simulator.sh
 cd app-center && ./dev-start.sh
 hdc shell hilog -x
 cd app-center && ./dev-stop.sh
+```
+
+## Quick Start (Windows)
+
+```cmd
+start-simulator.bat
+cd app-center && dev-start.bat
+hdc shell hilog -x
+cd app-center && dev-stop.bat
 ```
 
 ## Repository Layout

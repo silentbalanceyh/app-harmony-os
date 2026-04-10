@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c dev-start.bat:*)",
+      "Bash(cmd.exe /c dev-build.bat:*)",
+      "Bash(cmd.exe /c dev-stop.bat:*)",
+      "Bash(./dev-start.bat:*)",
+      "Bash(./dev-build.bat:*)",
+      "Bash(./dev-start.sh:*)",
+      "Bash(DEVECO_STUDIO_PATH=\"/d/Program Files/Huawei/DevEco Studio\" ./dev-start.sh:*)",
+      "Bash(DEVECO_STUDIO_PATH=\"/d/Program Files/Huawei/DevEco Studio\" NODE_HOME=\"/c/Program Files/nodejs\" ./dev-start.sh:*)",
+      "Bash(ls:*)",
+      "Bash([[ -d \"$DEVECO_STUDIO_PATH/Contents\" ]])",
+      "Read(//d/Program Files/Huawei/DevEco Studio/tools/hvigor/bin/**)",
+      "Bash(DEVECO_STUDIO_PATH=\"/d/Program Files/Huawei/DevEco Studio\" NODE_HOME=\"\" ./dev-start.sh:*)",
+      "Bash(/d/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc shell:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(bash:*)",
+      "Bash(DEVECO_STUDIO_PATH=\"D:/Program Files/Huawei/DevEco Studio\" bash:*)"
+    ]
+  }
+}

@@ -16,15 +16,15 @@ For any new session in this repository, load context in this order:
 ## Root Policy
 
 - Do not recreate HarmonyOS build files at repository root.
-- Keep root limited to documentation, rules, hidden task material, and shared helper scripts such as `start-simulator.sh`.
+- Keep root limited to documentation, rules, hidden task material, and shared helper scripts such as `start-simulator.sh` (and `start-simulator.bat`).
 - Every real app must remain isolated inside its own `app-*` directory.
 
 ## App Policy
 
 - Each `app-*` directory is an independent HarmonyOS application project.
 - Each app must keep its own `AppScope/`, `entry/`, `build-profile.json5`, `oh-package.json5`, `hvigorfile.ts`, and `app.json`.
-- Each app must provide `dev-build.sh`, `dev-start.sh`, `dev-stop.sh`, and `run-start.sh`.
-- Shared shell logic should stay inside each app’s `scripts/common.sh`.
+- Each app must provide `dev-build.sh`, `dev-start.sh`, `dev-stop.sh`, and `run-start.sh` (plus matching `.bat` variants for Windows).
+- Shared shell logic should stay inside each app’s `scripts/common.sh` (and `scripts/common.bat` for Windows).
 
 ## Current Apps
 
@@ -42,11 +42,21 @@ For any new session in this repository, load context in this order:
 - Returning from child apps to `app-center` should remain a low-friction path.
 - Current UX includes short local sound effects for open/return actions.
 
+## Platform Detection
+
+- This workspace runs on both macOS and Windows.
+- Detect platform via `uname -s`:
+  - `MINGW*` / `MSYS*` / `CYGWIN*` → Windows, use `.bat` scripts
+  - `Darwin` / `Linux` → Unix, use `.sh` scripts
+- On Windows, prefer `dev-start.bat` as the primary entry.
+- On macOS/Linux, prefer `dev-start.sh` as the primary entry.
+- Both `.sh` and `.bat` script sets exist for every app and at workspace root.
+
 ## Script Rules
 
-- `dev-start.sh` must be treated as the primary entry for local development.
-- `dev-start.sh` and `run-start.sh` must check simulator/device connectivity first.
-- If no HarmonyOS target is connected, scripts should attempt root `start-simulator.sh`.
+- `dev-start.sh` (or `dev-start.bat` on Windows) must be treated as the primary entry for local development.
+- `dev-start.*` and `run-start.*` must check simulator/device connectivity first.
+- If no HarmonyOS target is connected, scripts should attempt root `start-simulator.sh` (or `start-simulator.bat`).
 - Dependency installation is controlled by per-app `app.json` via `dependsOn`.
 - Launch fan-out is controlled by per-app `app.json` via `launchTargets`.
 
@@ -60,10 +70,22 @@ When project behavior changes in a way that affects onboarding, scripts, archite
 
 ## Preferred Debug Entry Points
 
+### macOS / Linux
+
 - Build: `cd app-center && ./dev-build.sh`
 - Start: `cd app-center && ./dev-start.sh`
 - Stop hvigor processes: `cd app-center && ./dev-stop.sh`
 - Simulator bootstrap: `./start-simulator.sh`
+
+### Windows
+
+- Build: `cd app-center && dev-build.bat`
+- Start: `cd app-center && dev-start.bat`
+- Stop hvigor processes: `cd app-center && dev-stop.bat`
+- Simulator bootstrap: `start-simulator.bat`
+
+### Cross-Platform
+
 - Device list: `hdc list targets`
 - Ability state: `hdc shell aa dump --mission-list`
 - System logs: `hdc shell hilog -x`
