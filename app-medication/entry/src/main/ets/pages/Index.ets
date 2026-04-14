@@ -565,8 +565,7 @@ struct Index {
           if (ocrResult.success && ocrResult.medicineName) {
             this.ocrMedicineName = ocrResult.medicineName;
             this.showPrompt('识别到：' + ocrResult.medicineName);
-            await this.voice.speak('识别到' + ocrResult.medicineName);
-            await this.waitMs(1000);
+            // 不播放，等待startVoiceDialogFlow统一处理
           } else {
             this.ocrMedicineName = '';
             const hint = ocrResult.error || '未识别到药品';
@@ -710,11 +709,12 @@ struct Index {
       // Step 1: 药品名称（OCR 预填充 或 语音输入）
       if (this.ocrMedicineName) {
         // OCR 已识别到药品名称，直接使用，跳过语音输入药品名
+        // 用户要求：不需要确认，直接问频率
         this.medName = this.ocrMedicineName;
         console.info('[Index] Using OCR medicine name: ' + this.medName);
-        this.showPrompt('好的，' + this.medName);
-        await this.voice.speak('识别到药品' + this.medName + '，确认使用');
-        await this.waitMs(1000);
+        this.showPrompt('识别到: ' + this.medName);
+        await this.voice.speak('识别到' + this.medName);
+        await this.waitMs(500);
         this.ocrMedicineName = '';  // 清空，只用一次
       } else {
         // OCR 未识别到，回退到语音输入
@@ -760,6 +760,8 @@ struct Index {
       // Step 3: 问一次吃多少（不需要药品解析）
       resultText = await this.voiceStep('一次吃多少？', '1片', false);  // parseMedicine=false
       this.medDosage = this.parseDosageFromText(resultText);
+
+      // 用户要求：不需要二次确认剂量单位，直接继续流程
 
       // Step 3 确认
       const dosageTts = this.dosageToTtsText(this.medDosage);
@@ -943,12 +945,64 @@ struct Index {
     }
     text = correctedInput;
 
-    // "一片" → 可能是"两片"的误识别（"两"和"一"在某些口音下相似）
-    // 如果后续数字解析失败返回默认值，可能是这个误识别
-    // 添加纠错规则：用户说"两片"时ASR可能识别成"一片"
-    if (text === '一片' || text.includes('一片')) {
-      // 暂时只做标记，不强制纠错，让后续逻辑处理
-      console.info('[Index] Note: 一片 may be 两片 (ASR误识别)');
+    // 【关键】ASR数字误识别："亮" → "两"（"两瓶"被ASR识别成"亮屏"的根因）
+    // "两"和"亮"语音高度相似，ASR高频混淆，可能重复出现"亮亮"
+    // 必须循环替换所有"亮"，否则"亮亮屏"→"亮两屏"仍然匹配失败
+    while (text.includes('亮')) {
+      text = text.replace('亮', '两');
+      console.info('[Index] Number correction: 亮 -> 两 (ASR高频误识别)');
+    }
+
+    // ASR数字误识别："量" → "两"（同音字）
+    while (text.includes('量')) {
+      text = text.replace('量', '两');
+      console.info('[Index] Number correction: 量 -> 两');
+    }
+
+    // "一片" → 可能是"两片"或"两瓶"的误识别（"两"和"一"在某些口音下相似）
+    // ASR对"瓶"单位识别不稳定，"两瓶"常被识别成"一片"
+    // 策略：如果文本只有"一片"且无其他有效剂量信息，检查是否可能是"两瓶"
+    if (text === '一片' || text === '一瓶' || text.includes('一片')) {
+      // 用户说"两瓶"，ASR识别成"一片"的情况较常见
+      // 这里暂不强制纠错，记录日志供后续分析
+      console.info('[Index] Note: 一片/一瓶 may be 两瓶 (ASR瓶单位误识别)');
+    }
+
+    // "一瓶" → ASR识别问题纠错，可能用户说的是"两瓶"
+    // 增加"瓶"单位同音字/近似音纠错
+    if (text.includes('一瓶')) {
+      text = text.replace('一瓶', '1瓶');
+      console.info('[Index] Bottle correction: 一瓶 -> 1瓶');
+    }
+    if (text.includes('两瓶')) {
+      text = text.replace('两瓶', '2瓶');
+      console.info('[Index] Bottle correction: 两瓶 -> 2瓶');
+    }
+    if (text.includes('二瓶')) {
+      text = text.replace('二瓶', '2瓶');
+      console.info('[Index] Bottle correction: 二瓶 -> 2瓶');
+    }
+    if (text.includes('三瓶')) {
+      text = text.replace('三瓶', '3瓶');
+      console.info('[Index] Bottle correction: 三瓶 -> 3瓶');
+    }
+    // 同音字/近似音纠错："平/凭/评/屏" → "瓶"（ASR高频误识别）
+    if (text.includes('平') && !text.includes('瓶')) {
+      text = text.replace('平', '瓶');
+      console.info('[Index] Bottle correction: 平 -> 瓶');
+    }
+    if (text.includes('凭') && !text.includes('瓶')) {
+      text = text.replace('凭', '瓶');
+      console.info('[Index] Bottle correction: 凭 -> 瓶');
+    }
+    if (text.includes('评') && !text.includes('瓶')) {
+      text = text.replace('评', '瓶');
+      console.info('[Index] Bottle correction: 评 -> 瓶');
+    }
+    // "屏"是ASR识别"瓶"时最常见的误识别字（语音相似度最高）
+    if (text.includes('屏') && !text.includes('瓶')) {
+      text = text.replace('屏', '瓶');
+      console.info('[Index] Bottle correction: 屏 -> 瓶 (ASR高频误识别)');
     }
 
     // "二片" → 用户说"两片"时ASR误识别
