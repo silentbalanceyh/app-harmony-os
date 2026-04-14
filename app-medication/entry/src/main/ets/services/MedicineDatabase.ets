@@ -420,6 +420,19 @@ export class MedicineDatabase {
         }
       }
 
+      // 优先级3：子串匹配（ASR 结果中包含药品名但前后有噪声）
+      // 例："阿莫欺凌阿莫西林" → 滑动窗口提取 → "阿莫西林" 命中
+      for (const candidate of candidates) {
+        const cleaned = candidate.toLowerCase().replace(/[，。、！？\s]+/g, '').trim();
+        if (!cleaned || cleaned.length < 2) continue;
+
+        const subMatch = MedicineDatabase.matchBySubstring(cleaned, medicines);
+        if (subMatch) {
+          console.info('[MedicineDb] Substring matched: ' + cleaned + ' -> ' + subMatch.medicineName);
+          return subMatch;
+        }
+      }
+
       // 优先级4：拼音首字母匹配（模糊匹配，支持子串匹配）
       const candidateInitials = MedicineDatabase.getInitialsFromText(cleaned);
       console.info('[MedicineDb] Candidate initials: ' + candidateInitials + ' for ' + cleaned);
@@ -507,6 +520,65 @@ export class MedicineDatabase {
       const corrected = MedicineDatabase.correctAsrResult(candidate);
       if (corrected) {
         return { medicineName: corrected, confidence: 5 };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 滑动窗口子串匹配（解决 ASR 识别结果前后有噪声的问题）
+   * 例："阿莫欺凌阿莫西林" → 提取 "阿莫西林"
+   *
+   * 策略：从长到短遍历所有子串，优先匹配较长子串
+   * - 子串长度从 8 递减到 2
+   * - 使用滑动窗口遍历所有可能的子串
+   *
+   * @param text ASR 识别文本
+   * @param medicines 药品列表
+   * @return 匹配结果或 null
+   */
+  private static matchBySubstring(text: string, medicines: MedicineInfo[]): MedicineMatchResult | null {
+    if (!text || text.length < 2) return null;
+
+    const maxLen = Math.min(text.length, 10);  // 最长子串 10 字（大多数药品名不超过 10 字）
+    const minLen = 2;  // 最短子串 2 字
+
+    // 从长到短遍历子串长度（优先匹配长名称，避免"阿莫"匹配到部分药品）
+    for (let len = maxLen; len >= minLen; len--) {
+      for (let start = 0; start <= text.length - len; start++) {
+        const substr = text.substring(start, start + len);
+
+        // 精确匹配药品名
+        for (const m of medicines) {
+          if (m.name === substr) {
+            return { medicineName: m.name, confidence: 3 };  // confidence 3 = 子串匹配
+          }
+        }
+
+        // 精确匹配别名
+        for (const m of medicines) {
+          if (m.aliases && m.aliases.some((a: string) => a === substr)) {
+            return { medicineName: m.name, confidence: 3 };
+          }
+        }
+      }
+    }
+
+    // 如果没有精确匹配，尝试模糊子串匹配（编辑距离 ≤1）
+    // 这可以处理"阿莫西林"被识别成"阿莫西林胶囊"的情况
+    for (let len = maxLen; len >= minLen; len--) {
+      for (let start = 0; start <= text.length - len; start++) {
+        const substr = text.substring(start, start + len);
+
+        for (const m of medicines) {
+          // 子串与药品名编辑距离 ≤1
+          const distance = MedicineDatabase.levenshteinDistance(substr, m.name);
+          if (distance <= 1) {
+            console.info('[MedicineDb] Fuzzy substring match: "' + substr + '" -> ' + m.name + ' (dist=' + distance + ')');
+            return { medicineName: m.name, confidence: 4 };  // confidence 4 = 模糊子串匹配
+          }
+        }
       }
     }
 

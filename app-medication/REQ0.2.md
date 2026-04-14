@@ -393,3 +393,8 @@ start ability successfully.
 - `SoundEffectPlayer.ets`：多处理发可能抛异常的函数调用
 - `StrongReminderService.ets`：`backgroundTaskManager` 部分设备不支持、`vibrate`/`stop` 已 deprecated
 - `Index.ets`：`requestEnableNotification`、`PhotoViewPicker` 等已 deprecated
+
+
+---
+
+> **注**：2026-04-13 拍照识别药品名称（OCR + 药品库匹配）相关内容已移至 `REQ0.3.md`。
