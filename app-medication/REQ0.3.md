@@ -830,3 +830,54 @@ private async cleanupCapturer(): Promise<void> {
 ---
 
 **文档结束**
+
+---
+
+## 十八、后续优化记录（2026-04-14）
+
+### 18.1 OCR 流程优化（Index.ets）
+
+| 优化项 | 说明 |
+|--------|------|
+| **去除重复 TTS 播报** | OCR 识别成功后不再立即播放 TTS，避免与后续语音对话流程重复播报。识别结果等待 `startVoiceDialogFlow` 统一处理 |
+| **简化确认流程** | OCR 预填充药品名后，不再询问用户确认，直接进入 Step 2（问频率），减少操作步骤 |
+| **优化提示显示** | 识别成功提示显示时间从 1000ms 缩短到 500ms，提升流畅度 |
+
+**修改位置：**
+- `openPhotoPicker()` 方法：移除 OCR 成功后的 TTS 播报和等待
+- `startVoiceDialogFlow()` Step 1：简化 OCR 预填充流程，直接播报"识别到XXX"，不再询问确认
+
+### 18.2 ASR 剂量识别增强（Index.ets）
+
+新增多种 ASR 误识别纠错规则，提升语音输入剂量时的识别准确率：
+
+| 误识别 | 纠正 | 说明 |
+|--------|------|------|
+| "亮" | "两" | "两"和"亮"语音高度相似，循环替换所有"亮" |
+| "量" | "两" | 同音字误识别 |
+| "平/凭/评/屏" | "瓶" | "瓶"单位的高频同音字/近似音纠错 |
+| "一瓶/两瓶/二瓶/三瓶" | "1瓶/2瓶/2瓶/3瓶" | 中文数字统一转阿拉伯数字 |
+| "二片" | "2片" | 用户说"两片"时 ASR 误识别 |
+
+**修改位置：** `parseDosageFromText()` 方法
+
+### 18.3 图片读取重构（CameraOcrService.ets）
+
+| 优化项 | 说明 |
+|--------|------|
+| **主方案：fs.open() + buffer** | 使用 `fs.open()` 打开媒体库 URI，读取到 ArrayBuffer，再创建 ImageSource 和 PixelMap |
+| **回退方案：photoAccessHelper** | 当 `fs.open()` 失败时，通过 `photoAccessHelper.getPhotoAccessHelper()` 获取 PhotoAsset，使用 `getReadOnlyFd()` 读取文件描述符 |
+| **新增依赖导入** | 添加 `@ohos.file.photoAccessHelper` 和 `@ohos.data.dataSharePredicates` 导入 |
+
+**修改位置：** `recognizeFromUri()` 方法的 STEP 1 图片读取逻辑完全重写
+
+### 18.4 修改文件清单（2026-04-14）
+
+| 文件 | 变更说明 |
+|------|---------|
+| `entry/src/main/ets/pages/Index.ets` | 1. OCR 成功后去除重复 TTS 播报<br>2. 简化 OCR 预填充确认流程<br>3. 增加 ASR 剂量识别纠错规则（亮/量/瓶单位等） |
+| `entry/src/main/ets/services/CameraOcrService.ets` | 1. 重写图片读取逻辑：主方案 fs.open()+buffer，回退方案 photoAccessHelper<br>2. 新增 photoAccessHelper 和 dataSharePredicates 导入 |
+
+---
+
+**文档结束**

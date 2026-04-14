@@ -9,6 +9,8 @@ import fs from '@ohos.file.fs';
 import { MedicineDatabase } from './MedicineDatabase';
 import { image } from '@kit.ImageKit';
 import { textRecognition } from '@kit.CoreVisionKit';
+import photoAccessHelper from '@ohos.file.photoAccessHelper';
+import dataSharePredicates from '@ohos.data.dataSharePredicates';
 
 const PHOTO_DIR = 'medication_photos';
 
@@ -82,30 +84,88 @@ export class CameraOcrService {
     }
 
     try {
-      console.info('[CameraOcrService] STEP 1: Creating ImageSource...');
+      console.info('[CameraOcrService] STEP 1: Reading image file...');
 
-      // 1. 直接从 URI 创建 ImageSource（支持 file://media/Photo/ 格式）
-      // image.createImageSource 支持：文件路径、file:// URI、dataability:// URI
-      let imageSource: image.ImageSource;
+      // 方案：PhotoPicker 返回的 URI 具有临时授权，直接用 fs.open() 打开
+      let pixelMap: image.PixelMap | null = null;
 
+      // STEP 1a: 直接尝试 fs.open() 打开媒体库 URI
+      console.info('[CameraOcrService] STEP 1a: Trying fs.open() with URI...');
       try {
-        console.info('[CameraOcrService] STEP 1a: Trying image.createImageSource(uri)...');
-        imageSource = image.createImageSource(imageUri);
-        console.info('[CameraOcrService] STEP 1a: SUCCESS - ImageSource created from URI');
-      } catch (sourceErr) {
-        // 如果直接用 URI 失败，尝试去掉 file:// 前缀
-        console.warn('[CameraOcrService] STEP 1a FAILED: ' + this.formatError(sourceErr));
-        console.info('[CameraOcrService] STEP 1b: Trying without file:// prefix...');
-        const pathWithoutPrefix = imageUri.replace('file://', '');
-        console.info('[CameraOcrService] STEP 1b: Path without prefix: ' + pathWithoutPrefix);
-        imageSource = image.createImageSource(pathWithoutPrefix);
-        console.info('[CameraOcrService] STEP 1b: SUCCESS - ImageSource created');
+        const file = await fs.open(imageUri, fs.OpenMode.READ_ONLY);
+        console.info('[CameraOcrService] STEP 1a: fs.open SUCCESS, fd=' + file.fd);
+
+        // STEP 1b: 获取文件大小并读取内容
+        const stat = fs.statSync(file.fd);
+        console.info('[CameraOcrService] STEP 1b: File size=' + stat.size + ' bytes');
+
+        const buffer = new ArrayBuffer(stat.size);
+        fs.readSync(file.fd, buffer);
+        fs.closeSync(file);
+        console.info('[CameraOcrService] STEP 1b: File content read into buffer');
+
+        // STEP 1c: 创建 ImageSource 和 PixelMap
+        const imageSource = image.createImageSource(buffer);
+        console.info('[CameraOcrService] STEP 1c: ImageSource created from buffer');
+
+        const decodingOptions: image.DecodingOptions = {
+          editable: false,
+          desiredPixelFormat: image.PixelMapFormat.RGBA_8888
+        };
+        pixelMap = await imageSource.createPixelMap(decodingOptions);
+        console.info('[CameraOcrService] STEP 1c: SUCCESS - PixelMap created');
+      } catch (fsErr) {
+        console.error('[CameraOcrService] STEP 1a fs.open FAILED: ' + this.formatError(fsErr));
+        console.info('[CameraOcrService] STEP 1a-fallback: Trying photoAccessHelper approach...');
+
+        // 回退方案：通过 photoAccessHelper 获取 PhotoAsset
+        try {
+          const phAccessHelper = photoAccessHelper.getPhotoAccessHelper(this.context);
+          console.info('[CameraOcrService] STEP 1a-fallback: photoAccessHelper instance obtained');
+
+          const predicates = new dataSharePredicates.DataSharePredicates();
+          predicates.equalTo(photoAccessHelper.PhotoKeys.URI, imageUri);
+
+          const fetchOptions: photoAccessHelper.FetchOptions = {
+            fetchColumns: [photoAccessHelper.PhotoKeys.URI, photoAccessHelper.PhotoKeys.TITLE],
+            predicates: predicates
+          };
+          console.info('[CameraOcrService] STEP 1a-fallback: FetchOptions created');
+
+          const fetchResult = await phAccessHelper.getAssets(fetchOptions);
+          const photoAsset = await fetchResult.getFirstObject();
+
+          if (!photoAsset) {
+            console.error('[CameraOcrService] STEP 1a-fallback: No PhotoAsset found');
+          } else {
+            console.info('[CameraOcrService] STEP 1a-fallback: PhotoAsset obtained');
+
+            // 尝试 getReadOnlyFd
+            const fd = await photoAsset.getReadOnlyFd();
+            console.info('[CameraOcrService] STEP 1a-fallback: fd=' + fd);
+
+            const stat = fs.statSync(fd);
+            const buffer = new ArrayBuffer(stat.size);
+            fs.readSync(fd, buffer);
+            await photoAsset.close(fd);
+
+            const imageSource = image.createImageSource(buffer);
+            const decodingOptions: image.DecodingOptions = {
+              editable: false,
+              desiredPixelFormat: image.PixelMapFormat.RGBA_8888
+            };
+            pixelMap = await imageSource.createPixelMap(decodingOptions);
+            console.info('[CameraOcrService] STEP 1a-fallback: SUCCESS - PixelMap created');
+          }
+        } catch (fallbackErr) {
+          console.error('[CameraOcrService] STEP 1a-fallback FAILED: ' + this.formatError(fallbackErr));
+        }
       }
 
-      // 2. 解码为 PixelMap
-      console.info('[CameraOcrService] STEP 2: Creating PixelMap...');
-      const pixelMap: image.PixelMap = await imageSource.createPixelMap();
-      console.info('[CameraOcrService] STEP 2: SUCCESS - PixelMap created');
+      if (!pixelMap) {
+        console.error('[CameraOcrService] STEP 2 FAIL: Unable to create PixelMap');
+        return { success: false, error: '无法读取图片文件（请确认图片存在）' };
+      }
 
       // 3. 使用 HarmonyOS textRecognition API 识别文字
       console.info('[CameraOcrService] STEP 3: Preparing VisionInfo...');
