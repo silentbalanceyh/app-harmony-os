@@ -16,7 +16,19 @@
       "Bash(/d/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc shell:*)",
       "Bash(cmd.exe:*)",
       "Bash(bash:*)",
-      "Bash(DEVECO_STUDIO_PATH=\"D:/Program Files/Huawei/DevEco Studio\" bash:*)"
+      "Bash(DEVECO_STUDIO_PATH=\"D:/Program Files/Huawei/DevEco Studio\" bash:*)",
+      "WebSearch",
+      "WebFetch(domain:developer.huawei.com)",
+      "WebFetch(domain:juejin.cn)",
+      "WebFetch(domain:cloud.tencent.com)",
+      "Bash(hdc shell:*)",
+      "Bash(hdc list:*)",
+      "Bash(export NODE_HOME=\"D:/Program Files/Huawei/DevEco Studio/tools/node\")",
+      "Bash(export DEVECO_STUDIO_PATH=\"D:/Program Files/Huawei/DevEco Studio\")",
+      "Bash(./hvigorw assembleApp -p product=default -p buildMode=debug)",
+      "Bash(export PATH=\"$NODE_HOME:$PATH\")",
+      "Bash(node \"D:/Program Files/Huawei/DevEco Studio/tools/hvigor/bin/hvigorw.js\" assembleApp -p product=default -p buildMode=debug)",
+      "Bash(hdc install:*)"
     ]
   }
 }

@@ -91,6 +91,8 @@ struct Index {
   @State private showCameraGuide: boolean = false;  // 显示相机权限引导弹窗（去设置页面）
   @State private showMicrophoneGuide: boolean = false;  // 显示麦克风权限引导弹窗
   @State private pendingImageUri: string = '';  // 拍照/选图后的临时图片路径（等待麦克风权限）
+  @State private ocrMedicineName: string = '';  // OCR 识别出的药品名称（预填充）
+  @State private isOcrProcessing: boolean = false;  // OCR 处理中
 
   // 静态变量存储活动闹铃（跨页面生命周期）
   private static activeAlarmId: string = '';
@@ -552,23 +554,44 @@ struct Index {
         console.info('[Index] Image selected: ' + this.pendingImageUri);
         this.isCapturing = false;
 
-        // 图片选择完成后，检查麦克风权限
+        // OCR 识别药品名称
+        this.isOcrProcessing = true;
+        this.showPrompt('正在识别药品...');
+        try {
+          const ocrResult = await this.camera.recognizeFromUri(this.pendingImageUri);
+          console.info('[Index] OCR result: success=' + ocrResult.success +
+            ', medicineName=' + ocrResult.medicineName);
+
+          if (ocrResult.success && ocrResult.medicineName) {
+            this.ocrMedicineName = ocrResult.medicineName;
+            this.showPrompt('识别到：' + ocrResult.medicineName);
+            await this.voice.speak('识别到' + ocrResult.medicineName);
+            await this.waitMs(1000);
+          } else {
+            this.ocrMedicineName = '';
+            const hint = ocrResult.error || '未识别到药品';
+            this.showPrompt(hint);
+            await this.waitMs(1500);
+          }
+        } catch (ocrErr) {
+          console.error('[Index] OCR failed: ' + JSON.stringify(ocrErr));
+          this.ocrMedicineName = '';
+        }
+        this.isOcrProcessing = false;
+
+        // 图片选择 + OCR 完成后，检查麦克风权限并启动语音对话
         const hasMic = await this.checkMicrophonePermission();
         if (hasMic) {
-          // 有麦克风权限，直接启动语音对话
           this.medImage = this.pendingImageUri;
           this.pendingImageUri = '';
           await this.startVoiceDialogFlow();
         } else {
-          // 无麦克风权限，弹系统权限框（和启动时一样）
           const micGranted = await this.requestMicrophonePermission();
           if (micGranted) {
-            // 权限获取成功，启动语音对话
             this.medImage = this.pendingImageUri;
             this.pendingImageUri = '';
             await this.startVoiceDialogFlow();
           } else {
-            // 权限被拒绝，提示用户并返回
             this.pendingImageUri = '';
             this.showPrompt('无法使用语音功能，需要麦克风权限');
             await this.waitMs(3000);
@@ -684,34 +707,44 @@ struct Index {
     this.isListening = true;
 
     try {
-      // Step 1: 问药品名称（需要药品解析）
-      this.showPrompt('请说药品名称');
-      await this.voice.speak('请说药品名称');
+      // Step 1: 药品名称（OCR 预填充 或 语音输入）
+      if (this.ocrMedicineName) {
+        // OCR 已识别到药品名称，直接使用，跳过语音输入药品名
+        this.medName = this.ocrMedicineName;
+        console.info('[Index] Using OCR medicine name: ' + this.medName);
+        this.showPrompt('好的，' + this.medName);
+        await this.voice.speak('识别到药品' + this.medName + '，确认使用');
+        await this.waitMs(1000);
+        this.ocrMedicineName = '';  // 清空，只用一次
+      } else {
+        // OCR 未识别到，回退到语音输入
+        this.showPrompt('请说药品名称');
+        await this.voice.speak('请说药品名称');
 
-      // 启动麦克风动画
-      this.showMicAnimation = true;
-      this.showBeepHint = true;
+        // 启动麦克风动画
+        this.showMicAnimation = true;
+        this.showBeepHint = true;
 
-      // 震动提示（REQ0.2）- 在ASR启动前震动
-      this.vib(150);
+        // 震动提示（REQ0.2）- 在ASR启动前震动
+        this.vib(150);
 
-      // 等待震动结束
-      await this.waitMs(200);
+        // 等待震动结束
+        await this.waitMs(200);
 
-      // 震动结束后启动语音识别
+        // 震动结束后启动语音识别
+        const result1 = await this.voice.startRecognition(30000, true);  // parseMedicine=true
 
-      const result1 = await this.voice.startRecognition(30000, true);  // parseMedicine=true
+        // 停止麦克风动画
+        this.showMicAnimation = false;
+        this.showBeepHint = false;
 
-      // 停止麦克风动画
-      this.showMicAnimation = false;
-      this.showBeepHint = false;
+        this.medName = result1.medicineName || result1.text || '药品';
 
-      this.medName = result1.medicineName || result1.text || '药品';
-
-      // Step 1 确认：显示文本 → 等待TTS播报完成 → 停留让老人看清
-      this.showPrompt('好的，' + this.medName);
-      await this.voice.speak('好的，' + this.medName);
-      await this.waitMs(800);
+        // Step 1 确认：显示文本 → 等待TTS播报完成 → 停留让老人看清
+        this.showPrompt('好的，' + this.medName);
+        await this.voice.speak('好的，' + this.medName);
+        await this.waitMs(800);
+      }
 
       // Step 2: 问一天吃几次（不需要药品解析）
       let resultText = await this.voiceStep('一天吃几次？', '一天一次', false);  // parseMedicine=false

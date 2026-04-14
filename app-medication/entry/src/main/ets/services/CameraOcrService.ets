@@ -1,68 +1,348 @@
 /**
- * 拍照识别服务
- * 相机拍照 + OCR识别药盒（简化实现）
+ * 拍照识别服务 - OCR 实现
+ * 使用 HarmonyOS textRecognition API 提取药盒文字
+ * 通过 MedicineDatabase 多策略匹配药品名称
  */
 
 import common from '@ohos.app.ability.common';
 import fs from '@ohos.file.fs';
-import { MedicineInfo } from '../models/ReminderModel';
+import { MedicineDatabase } from './MedicineDatabase';
+import { image } from '@kit.ImageKit';
+import { textRecognition } from '@kit.CoreVisionKit';
 
 const PHOTO_DIR = 'medication_photos';
 
 export interface OcrResult {
   success: boolean;
-  medicineInfo?: MedicineInfo;
+  medicineName?: string;    // 匹配到的药品名称
+  rawText?: string;         // OCR 原始文本
+  candidates?: string[];    // 所有候选文本块
   imagePath?: string;
+  confidence?: number;      // 匹配置信度 (1-5)
   error?: string;
-}
-
-// 本地药品库接口
-interface LocalMedicineEntry {
-  key: string;
-  info: MedicineInfo;
 }
 
 export class CameraOcrService {
   private context: common.UIAbilityContext | null = null;
   private photoPath: string = '';
+  private initialized: boolean = false;
 
   async init(context: common.UIAbilityContext): Promise<void> {
+    console.info('[CameraOcrService] ========== INIT START ==========');
     this.context = context;
     this.photoPath = context.filesDir + '/' + PHOTO_DIR;
+    console.info('[CameraOcrService] Context set, photoPath: ' + this.photoPath);
+
     try {
       fs.mkdirSync(this.photoPath);
+      console.info('[CameraOcrService] Photo directory created');
     } catch (e) {
-      // 目录已存在
+      console.info('[CameraOcrService] Photo directory already exists or creation failed');
     }
-    console.info('[CameraOcrService] Initialized');
+
+    // 初始化 OCR 服务
+    try {
+      console.info('[CameraOcrService] Calling textRecognition.init()...');
+      const initResult: boolean = await textRecognition.init();
+      this.initialized = initResult;
+      console.info('[CameraOcrService] textRecognition.init() result: ' + initResult);
+
+      if (!initResult) {
+        console.warn('[CameraOcrService] textRecognition.init() returned false');
+        console.warn('[CameraOcrService] This may indicate CoreVisionKit is not available on this device/emulator');
+      }
+    } catch (e) {
+      const errMsg = this.formatError(e);
+      console.warn('[CameraOcrService] textRecognition.init() threw exception: ' + errMsg);
+      console.warn('[CameraOcrService] NOTE: HarmonyOS emulator may NOT support textRecognition API');
+      console.warn('[CameraOcrService] NOTE: CoreVisionKit requires hardware ML acceleration');
+      console.warn('[CameraOcrService] NOTE: Please test on a real HarmonyOS device');
+      this.initialized = false;  // 明确标记初始化失败
+    }
+
+    console.info('[CameraOcrService] ========== INIT END (initialized=' + this.initialized + ') ==========');
   }
 
-  async captureAndRecognize(): Promise<OcrResult> {
-    console.info('[CameraOcrService] Capture (stub)');
-    return {
-      success: false,
-      error: '拍照识别功能即将上线'
-    };
+  /**
+   * 对图片执行 OCR 识别并匹配药品名称
+   * 流程：图片URI → HarmonyOS textRecognition → 文本提取 → 药品库匹配
+   *
+   * 注意：HarmonyOS 相册返回的 URI 格式为 file://media/Photo/...
+   *       需要用 image.createImageSource(uri) 直接处理，不能用 fs.openSync
+   */
+  async recognizeFromUri(imageUri: string): Promise<OcrResult> {
+    console.info('[CameraOcrService] ========== OCR DIAGNOSTIC START ==========');
+    console.info('[CameraOcrService] Input URI: ' + imageUri);
+    console.info('[CameraOcrService] Context status: ' + (this.context ? 'OK' : 'NULL'));
+    console.info('[CameraOcrService] Initialized status: ' + this.initialized);
+
+    if (!this.context) {
+      console.error('[CameraOcrService] STEP FAIL: context is null');
+      return { success: false, error: '服务未初始化' };
+    }
+
+    try {
+      console.info('[CameraOcrService] STEP 1: Creating ImageSource...');
+
+      // 1. 直接从 URI 创建 ImageSource（支持 file://media/Photo/ 格式）
+      // image.createImageSource 支持：文件路径、file:// URI、dataability:// URI
+      let imageSource: image.ImageSource;
+
+      try {
+        console.info('[CameraOcrService] STEP 1a: Trying image.createImageSource(uri)...');
+        imageSource = image.createImageSource(imageUri);
+        console.info('[CameraOcrService] STEP 1a: SUCCESS - ImageSource created from URI');
+      } catch (sourceErr) {
+        // 如果直接用 URI 失败，尝试去掉 file:// 前缀
+        console.warn('[CameraOcrService] STEP 1a FAILED: ' + this.formatError(sourceErr));
+        console.info('[CameraOcrService] STEP 1b: Trying without file:// prefix...');
+        const pathWithoutPrefix = imageUri.replace('file://', '');
+        console.info('[CameraOcrService] STEP 1b: Path without prefix: ' + pathWithoutPrefix);
+        imageSource = image.createImageSource(pathWithoutPrefix);
+        console.info('[CameraOcrService] STEP 1b: SUCCESS - ImageSource created');
+      }
+
+      // 2. 解码为 PixelMap
+      console.info('[CameraOcrService] STEP 2: Creating PixelMap...');
+      const pixelMap: image.PixelMap = await imageSource.createPixelMap();
+      console.info('[CameraOcrService] STEP 2: SUCCESS - PixelMap created');
+
+      // 3. 使用 HarmonyOS textRecognition API 识别文字
+      console.info('[CameraOcrService] STEP 3: Preparing VisionInfo...');
+      const visionInfo: textRecognition.VisionInfo = {
+        pixelMap: pixelMap
+      };
+
+      console.info('[CameraOcrService] STEP 3a: Calling textRecognition.recognizeText...');
+      console.info('[CameraOcrService] STEP 3a: This may take a few seconds...');
+
+      let recognitionResult: textRecognition.TextRecognitionResult;
+      try {
+        recognitionResult = await textRecognition.recognizeText(visionInfo);
+        console.info('[CameraOcrService] STEP 3a: SUCCESS - recognizeText returned');
+      } catch (ocrErr) {
+        console.error('[CameraOcrService] STEP 3a FAILED: textRecognition.recognizeText error');
+        console.error('[CameraOcrService] Error details: ' + this.formatError(ocrErr));
+        // Check if this is an emulator limitation
+        console.error('[CameraOcrService] NOTE: textRecognition API may not be supported on HarmonyOS emulator');
+        console.error('[CameraOcrService] NOTE: Please test on a real device if possible');
+        pixelMap.release();
+        return {
+          success: false,
+          error: 'OCR服务不可用（模拟器可能不支持CoreVisionKit）',
+          rawText: ''
+        };
+      }
+
+      // 4. 提取所有文本块
+      const candidates: string[] = [];
+      let rawText = '';
+
+      // 使用正确的结构：result.blocks（不是 textBlocks），block.value（不是 block.text）
+      if (recognitionResult && recognitionResult.blocks) {
+        for (const block of recognitionResult.blocks) {
+          const blockText: string = block.value || '';
+          if (blockText.trim().length > 0) {
+            candidates.push(blockText.trim());
+            rawText += blockText.trim() + '\n';
+          }
+
+          // 同时提取每行的文本
+          if (block.lines) {
+            for (const line of block.lines) {
+              const lineText: string = line.value || '';
+              if (lineText.trim().length > 0 && !candidates.includes(lineText.trim())) {
+                candidates.push(lineText.trim());
+              }
+            }
+          }
+        }
+      }
+
+      // 同时获取完整识别文本
+      if (recognitionResult.value) {
+        rawText = recognitionResult.value;
+      }
+
+      // 释放资源
+      pixelMap.release();
+
+      console.info('[CameraOcrService] STEP 4: OCR extracted ' + candidates.length + ' text blocks');
+      console.info('[CameraOcrService] STEP 4: Raw text preview: ' + rawText.substring(0, 200));
+
+      if (candidates.length === 0) {
+        console.warn('[CameraOcrService] STEP 4: No text extracted from image');
+        return {
+          success: false,
+          rawText: rawText,
+          error: '未能识别到文字，请重新拍照（图片可能模糊或光线不足）'
+        };
+      }
+
+      // 5. 文本预处理：拆分和清洗候选文本
+      console.info('[CameraOcrService] STEP 5: Preprocessing OCR text...');
+      const cleanedCandidates = this.preprocessOcrText(candidates);
+      console.info('[CameraOcrService] STEP 5: Cleaned candidates count: ' + cleanedCandidates.length);
+      console.info('[CameraOcrService] STEP 5: Cleaned candidates: ' + JSON.stringify(cleanedCandidates.slice(0, 10)));
+
+      // 6. 使用 MedicineDatabase 多策略匹配
+      console.info('[CameraOcrService] STEP 6: Matching against medicine database...');
+      const matchResult = MedicineDatabase.matchMedicineFromCandidates(cleanedCandidates);
+
+      if (matchResult) {
+        console.info('[CameraOcrService] STEP 6: SUCCESS - Matched: ' + matchResult.medicineName +
+          ' (confidence: ' + matchResult.confidence + ')');
+        console.info('[CameraOcrService] ========== OCR DIAGNOSTIC END (SUCCESS) ==========');
+        return {
+          success: true,
+          medicineName: matchResult.medicineName,
+          rawText: rawText,
+          candidates: cleanedCandidates,
+          imagePath: imageUri,
+          confidence: matchResult.confidence
+        };
+      }
+
+      // 7. 匹配失败，返回原始文本供用户参考
+      console.warn('[CameraOcrService] STEP 6: No medicine match found');
+      console.warn('[CameraOcrService] ========== OCR DIAGNOSTIC END (NO MATCH) ==========');
+      return {
+        success: false,
+        rawText: rawText,
+        candidates: cleanedCandidates,
+        error: '未匹配到药品，请手动输入或重新拍照'
+      };
+
+    } catch (e) {
+      const errMsg = this.formatError(e);
+      console.error('[CameraOcrService] ========== OCR DIAGNOSTIC END (ERROR) ==========');
+      console.error('[CameraOcrService] Unexpected error: ' + errMsg);
+      return {
+        success: false,
+        error: '识别失败: ' + errMsg
+      };
+    }
   }
 
-  matchLocalMedicine(partialName: string): MedicineInfo | null {
-    const commonMedicines: LocalMedicineEntry[] = [
-      { key: '降压', info: { name: '降压药', specification: '10mg', usage: '口服' } },
-      { key: '降糖', info: { name: '降糖药', specification: '5mg', usage: '口服' } },
-      { key: '钙', info: { name: '钙片', specification: '500mg', usage: '口服' } },
-      { key: '维', info: { name: '维生素', specification: '100mg', usage: '口服' } },
-      { key: '胃', info: { name: '胃药', specification: '10mg', usage: '口服' } }
-    ];
-
-    for (const entry of commonMedicines) {
-      if (partialName.includes(entry.key)) {
-        return entry.info;
+  /**
+   * 格式化错误对象，便于日志输出
+   */
+  private formatError(e: Object | string | number | undefined): string {
+    if (e instanceof Error) {
+      return e.message + ' (' + e.name + ')';
+    }
+    if (typeof e === 'object' && e !== null && e !== undefined) {
+      try {
+        return JSON.stringify(e);
+      } catch {
+        return '[Object]';
       }
     }
-    return null;
+    return String(e);
+  }
+
+  /**
+   * 文本预处理：清洗 OCR 结果中的噪声
+   * 药盒上常见的干扰文字：规格、厂家、批号、有效期、广告语等
+   */
+  private preprocessOcrText(candidates: string[]): string[] {
+    const cleaned: string[] = [];
+
+    // 需要过滤的噪声模式
+    const noisePatterns: RegExp[] = [
+      /\d{4}[\/\-]\d{2}[\/\-]\d{2}/,       // 日期格式 2025/01/01
+      /\d{4}年\d{1,2}月\d{1,2}日/,          // 中文日期
+      /有效期至?/,                           // 有效期
+      /生产日期/,                            // 生产日期
+      /批号/,                                // 批号
+      /批准文号/,                            // 批准文号
+      /^国药准字/,                           // 国药准字开头（不是药品名）
+      /^\d{6,}$/ ,                          // 纯数字（批号等）
+      /^[A-Z]\d{10,}$/ ,                    // 批准文号格式
+      /贮存|储藏|贮藏/,                      // 贮存条件
+      /说明书/,                              // 说明书
+      /咨询|电话|热线/,                      // 联系方式
+      /http|www|\.com|\.cn/,                // 网址
+      /^[\d\s]+$/ ,                         // 纯数字+空格
+    ];
+
+    // 规格信息（保留但降低优先级，药品名可能和规格在一起）
+    const specPatterns: RegExp[] = [
+      /(\d+(\.\d+)?)(mg|g|ml|克|毫克|毫升)/,  // 规格：10mg, 0.5g
+      /×\d+/,                                   // ×12片
+      /\d+(片|粒|颗|袋|支|丸|贴)/,              // 数量：12片
+    ];
+
+    for (const text of candidates) {
+      const trimmed = text.trim();
+      if (trimmed.length < 2) continue;  // 过滤单个字符
+
+      // 检查是否匹配噪声模式
+      let isNoise = false;
+      for (const pattern of noisePatterns) {
+        if (pattern.test(trimmed)) {
+          isNoise = true;
+          break;
+        }
+      }
+
+      if (isNoise) {
+        console.info('[CameraOcrService] Filtered noise: ' + trimmed);
+        continue;
+      }
+
+      // 清理文本中的特殊字符
+      let cleanedText = trimmed
+        .replace(/[^\u4e00-\u9fa5a-zA-Z0-9片颗粒袋包勺支丸滴个瓶胶囊口服液]/g, '')
+        .trim();
+
+      if (cleanedText.length >= 2) {
+        cleaned.push(cleanedText);
+      }
+
+      // 对包含"规格+药品名"的文本进行拆分
+      // 例如："阿莫西林胶囊0.5g×12片/盒" → "阿莫西林胶囊"
+      for (const specPat of specPatterns) {
+        const specMatch = trimmed.match(specPat);
+        if (specMatch && specMatch.index !== undefined && specMatch.index > 2) {
+          const beforeSpec = trimmed.substring(0, specMatch.index).trim();
+          if (beforeSpec.length >= 2) {
+            const cleanedBefore = beforeSpec
+              .replace(/[^\u4e00-\u9fa5a-zA-Z0-9片颗粒袋包勺支丸滴个瓶胶囊口服液]/g, '')
+              .trim();
+            if (cleanedBefore.length >= 2 && !cleaned.includes(cleanedBefore)) {
+              cleaned.push(cleanedBefore);
+            }
+          }
+        }
+      }
+    }
+
+    // 补充：将所有文本拼接后按常见分隔符拆分，增加匹配机会
+    const allText = candidates.join('');
+    const splitParts = allText.split(/[\s,，。、：:；;\n]+/);
+    for (const part of splitParts) {
+      const p = part.trim()
+        .replace(/[^\u4e00-\u9fa5a-zA-Z0-9片颗粒袋包勺支丸滴个瓶胶囊口服液]/g, '')
+        .trim();
+      if (p.length >= 2 && !cleaned.includes(p)) {
+        cleaned.push(p);
+      }
+    }
+
+    return cleaned;
   }
 
   async destroy(): Promise<void> {
+    // 释放 OCR 服务
+    if (this.initialized) {
+      try {
+        await textRecognition.release();
+        console.info('[CameraOcrService] OCR released');
+      } catch (e) {
+        console.warn('[CameraOcrService] OCR release failed: ' + JSON.stringify(e));
+      }
+    }
     console.info('[CameraOcrService] Destroyed');
   }
 }

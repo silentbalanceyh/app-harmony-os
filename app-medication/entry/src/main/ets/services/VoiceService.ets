@@ -52,6 +52,8 @@ export class VoiceService {
 
   private isListening: boolean = false;
   private sessionId: string = '';
+  private currentCapturer: audio.AudioCapturer | null = null;  // 跟踪当前音频采集器
+  private lastSessionId: string = '';  // 追踪上一个完成的会话ID，忽略过期回调
 
   /**
    * 初始化语音服务
@@ -276,65 +278,81 @@ export class VoiceService {
       return { success: false, error: '需要麦克风权限才能语音识别' };
     }
 
+    // 清理上一个会话的资源
+    await this.cleanupCapturer();
+
     this.isListening = true;
     this.sessionId = Date.now().toString();
     console.info('[VoiceService] ========== startRecognition BEGIN ==========');
-    console.info('[VoiceService] vadBegin=' + VAD_BEGIN_MS + 'ms, vadEnd=' + VAD_END_MS + 'ms, timeout=' + timeout + 'ms');
+    console.info('[VoiceService] sessionId=' + this.sessionId + ', vadBegin=' + VAD_BEGIN_MS + 'ms, vadEnd=' + VAD_END_MS + 'ms, timeout=' + timeout + 'ms');
+
+    const currentSessionId = this.sessionId;  // 闭包捕获当前会话ID
 
     return new Promise(async (resolve) => {
       let recognizedText: string = '';
-      let audioCapturer: audio.AudioCapturer | null = null;
+      let resolved = false;  // 防止 onComplete 和 onError 竞态重复 resolve
 
       this.asrEngine!.setListener({
         onStart: (sessionId: string, eventMessage: string) => {
+          if (sessionId !== currentSessionId) return;
           console.info('[VoiceService] Recognition started');
         },
         onEvent: (sessionId: string, eventCode: number, eventMessage: string) => {
+          if (sessionId !== currentSessionId) return;
           console.info('[VoiceService] Event: ' + eventCode);
         },
         onResult: (sessionId: string, result: speechRecognizer.SpeechRecognitionResult) => {
+          if (sessionId !== currentSessionId) return;
           if (result.result) {
             recognizedText = result.result;
             console.info('[VoiceService] Partial result: ' + result.result);
           }
         },
         onComplete: (sessionId: string, eventMessage: string) => {
-          this.isListening = false;
-          if (audioCapturer) {
-            audioCapturer.stop().then(() => audioCapturer?.release()).catch(() => {});
-          }
+          if (sessionId !== currentSessionId || resolved) return;
+          resolved = true;  // 标记已处理，防止 onError 竞态
           console.info('[VoiceService] ========== Recognition COMPLETE ==========');
           console.info('[VoiceService] recognizedText="' + recognizedText + '", parseMedicine=' + parseMedicine);
 
-          if (recognizedText) {
-            // 使用单结果+五级匹配算法
-            // 五级匹配包括：精确名、别名、拼音全拼、拼音首字母、Levenshtein模糊
-            const candidates = [recognizedText];
-            console.info('[VoiceService] Using single result with 5-level matching: ' + recognizedText);
+          // 先停止音频采集，再处理结果
+          this.cleanupCapturer().then(() => {
+            this.isListening = false;
+            this.lastSessionId = currentSessionId;
 
-            if (parseMedicine) {
-              // Step 1：问药品名，需要药品解析（使用五级匹配）
-              const parsed = this.parseVoiceCommandWithCandidates(candidates);
-              resolve(parsed);
+            if (recognizedText) {
+              const candidates = [recognizedText];
+              console.info('[VoiceService] Using single result with 5-level matching: ' + recognizedText);
+
+              if (parseMedicine) {
+                const parsed = this.parseVoiceCommandWithCandidates(candidates);
+                resolve(parsed);
+              } else {
+                resolve({
+                  success: true,
+                  text: recognizedText,
+                  rawText: recognizedText
+                });
+              }
             } else {
-              // Step 2/3：问频率/剂量，直接返回原始文本
-              resolve({
-                success: true,
-                text: recognizedText,
-                rawText: recognizedText
-              });
+              resolve({ success: false, error: '没有识别到语音，请再说一遍' });
             }
-          } else {
-            resolve({ success: false, error: '没有识别到语音，请再说一遍' });
-          }
+          });
         },
         onError: (sessionId: string, errorCode: number, errorMessage: string) => {
-          this.isListening = false;
-          if (audioCapturer) {
-            audioCapturer.stop().then(() => audioCapturer?.release()).catch(() => {});
+          if (sessionId !== currentSessionId) return;
+          if (resolved) {
+            // onComplete 已经处理过了，这是清理后的残留错误，忽略
+            console.warn('[VoiceService] ASR post-complete error: ' + errorMessage);
+            return;
           }
+          // 真正的错误（如超时、网络问题），onComplete 不会触发
+          resolved = true;
           console.error('[VoiceService] Recognition error: ' + errorMessage);
-          resolve({ success: false, error: '识别失败：' + errorMessage });
+          this.cleanupCapturer().then(() => {
+            this.isListening = false;
+            this.lastSessionId = currentSessionId;
+            resolve({ success: false, error: '识别失败：' + errorMessage });
+          });
         }
       });
 
@@ -349,10 +367,10 @@ export class VoiceService {
             sampleBit: 16
           },
           extraParams: {
-            timeout: timeout,           // 总超时时间
-            vadBegin: VAD_BEGIN_MS,     // 前端点检测：600ms（REQ0.2 调优，解决开头丢字）
-            vadEnd: VAD_END_MS,         // 后端点检测：1000ms（确保说完再结束）
-            maxAudioDuration: 60000     // 最大录音时长：60秒
+            timeout: timeout,
+            vadBegin: VAD_BEGIN_MS,
+            vadEnd: VAD_END_MS,
+            maxAudioDuration: 60000
           }
         });
         console.info('[VoiceService] ASR startListening: vadBegin=' + VAD_BEGIN_MS + 'ms, vadEnd=' + VAD_END_MS + 'ms');
@@ -375,20 +393,24 @@ export class VoiceService {
           capturerInfo: audioCapturerInfo
         };
 
-        audioCapturer = await audio.createAudioCapturer(audioCapturerOptions);
+        this.currentCapturer = await audio.createAudioCapturer(audioCapturerOptions);
         console.info('[VoiceService] AudioCapturer created');
 
         // 监听音频数据
-        audioCapturer.on('readData', (buffer: ArrayBuffer) => {
-          if (this.isListening && this.asrEngine) {
-            // 将采集的音频写入 ASR 引擎
-            const uint8Array = new Uint8Array(buffer);
-            this.asrEngine.writeAudio(this.sessionId, uint8Array);
+        this.currentCapturer.on('readData', (buffer: ArrayBuffer) => {
+          // 使用类字段检查状态，避免引用过期的局部变量
+          if (this.isListening && this.asrEngine && this.sessionId === currentSessionId) {
+            try {
+              const uint8Array = new Uint8Array(buffer);
+              this.asrEngine.writeAudio(this.sessionId, uint8Array);
+            } catch (writeErr) {
+              // 静默忽略写入错误（会话可能已结束）
+            }
           }
         });
 
         // 开始采集
-        await audioCapturer.start();
+        await this.currentCapturer.start();
         console.info('[VoiceService] AudioCapturer started');
 
       } catch (e) {
@@ -397,6 +419,26 @@ export class VoiceService {
         resolve({ success: false, error: '启动识别失败: ' + JSON.stringify(e) });
       }
     });
+  }
+
+  /**
+   * 安全清理音频采集器
+   */
+  private async cleanupCapturer(): Promise<void> {
+    if (this.currentCapturer) {
+      const capturer = this.currentCapturer;
+      this.currentCapturer = null;  // 先置空，防止 readData 回调继续写入
+      try {
+        if (capturer.state === audio.AudioState.STATE_RUNNING ||
+            capturer.state === audio.AudioState.STATE_PAUSED) {
+          await capturer.stop();
+        }
+        await capturer.release();
+        console.info('[VoiceService] AudioCapturer cleaned up');
+      } catch (e) {
+        // 静默处理清理错误
+      }
+    }
   }
 
   /**
