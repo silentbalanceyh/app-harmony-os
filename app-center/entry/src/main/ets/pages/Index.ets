@@ -73,6 +73,18 @@ struct Index {
       iconStrokeColor: '#059669',
       installed: true,
       stylePreset: 0
+    },
+    {
+      id: 'app-album',
+      label: '相册',
+      bundleName: 'com.zerows.appalbum',
+      moduleName: 'entry',
+      abilityName: 'EntryAbility',
+      icon: $r('app.media.ic_app_album'),
+      iconBgColor: '#E0E7FF',
+      iconStrokeColor: '#6366F1',
+      installed: true,
+      stylePreset: 2
     }
   ];
   @State private isRefreshing: boolean = false;

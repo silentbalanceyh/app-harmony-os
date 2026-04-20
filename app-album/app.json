@@ -1,0 +1,16 @@
+{
+  "app": "app-hello",
+  "device": "",
+  "bundleName": "com.zerows.apphello",
+  "moduleName": "entry",
+  "abilityName": "EntryAbility",
+  "dependsOn": [
+    "app-center",
+    "app-monitor",
+    "app-security",
+    "app-medication"
+  ],
+  "launchTargets": [
+    "app-center"
+  ]
+}
