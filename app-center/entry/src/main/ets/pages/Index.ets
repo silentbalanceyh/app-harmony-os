@@ -233,13 +233,8 @@ struct Index {
     .height(size)
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
-    .borderRadius(size / 5)
+    .borderRadius(4)
     .backgroundColor(target.iconBgColor)
-    .border({
-      width: 2,
-      color: target.iconStrokeColor,
-      radius: size / 5
-    })
   }
 
   @Builder
@@ -257,7 +252,7 @@ struct Index {
                     .fontColor('#FFFFFF')
                     .fontWeight(FontWeight.Medium)
                     .padding({ left: 5, right: 5, top: 2, bottom: 2 })
-                    .borderRadius(999)
+                    .borderRadius(2)
                     .backgroundColor('#F59E0B')
                     .translate({ x: 2, y: -2 })
                 }
@@ -313,7 +308,7 @@ struct Index {
               .fontSize(12)
               .fontColor('#2563EB')
               .padding({ left: 12, right: 12, top: 5, bottom: 5 })
-              .borderRadius(999)
+              .borderRadius(4)
               .backgroundColor('#DBEAFE')
               .onClick(() => {
                 this.cycleStyle(app);
@@ -324,8 +319,8 @@ struct Index {
         }
         .width('100%')
         .backgroundColor('#FFFFFF')
-        .borderRadius(16)
-        .margin({ left: 16, right: 16, top: 6, bottom: 6 })
+        .borderRadius(4)
+        .margin({ left: 16, right: 16, top: 4, bottom: 4 })
       }, (app: ManagedApp) => app.id)
     }
     .width('100%')
@@ -355,7 +350,7 @@ struct Index {
               .fontWeight(this.activeTab === 'entry' ? FontWeight.Medium : FontWeight.Normal)
           }
           .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-          .borderRadius(10)
+          .borderRadius(4)
           .backgroundColor(this.activeTab === 'entry' ? '#DBEAFE' : 'transparent')
           .onClick(() => {
             this.activeTab = 'entry';
@@ -372,7 +367,7 @@ struct Index {
               .fontWeight(this.activeTab === 'settings' ? FontWeight.Medium : FontWeight.Normal)
           }
           .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-          .borderRadius(10)
+          .borderRadius(4)
           .backgroundColor(this.activeTab === 'settings' ? '#DBEAFE' : 'transparent')
           .onClick(() => {
             this.activeTab = 'settings';
@@ -380,10 +375,7 @@ struct Index {
         }
       }
       .width('100%')
-      .padding({ left: 20, right: 16, top: 14, bottom: 12 })
-
-      Divider()
-        .color('#F1F5F9')
+      .padding({ left: 20, right: 16, top: 14, bottom: 16 })
 
       if (this.activeTab === 'entry') {
         this.buildEntryTab()
