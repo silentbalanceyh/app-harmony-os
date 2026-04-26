@@ -5,6 +5,7 @@ import shortcutManager from '@ohos.bundle.shortcutManager';
 import window from '@ohos.window';
 import dataPreferences from '@ohos.data.preferences';
 import { settingsStore } from '../utils/SettingsStore';
+import { ensureAlbumFontRegistered } from '../utils/AlbumFont';
 
 const SHORTCUT_ID: string = 'desktop-entry';
 const COMMAND_SET_SHORTCUT_VISIBLE: string = 'set-shortcut-visible';
@@ -43,7 +44,7 @@ export default class EntryAbility extends UIAbility {
       console.info('app-album EntryAbility skip page load for command dispatch');
       return;
     }
-    void this.loadInitialContent();
+    void this.prepareWindow(windowStage);
   }
 
   onWindowStageDestroy() {
@@ -128,6 +129,15 @@ export default class EntryAbility extends UIAbility {
       }
       console.info('Succeeded in loading app-album content. Data: ' + JSON.stringify(data));
     });
+  }
+
+  private async prepareWindow(windowStage: window.WindowStage): Promise<void> {
+    try {
+      await ensureAlbumFontRegistered(this.context);
+    } catch (err) {
+      console.error('Failed to prepare album font: ' + JSON.stringify(err));
+    }
+    await this.loadInitialContent();
   }
 
   private consumeCommand(want: Want): void {

@@ -1,175 +1,102 @@
 import router from '@ohos.router';
 import { gifData, Folder } from '../models/AlbumData';
+import { AlbumAccent, AlbumTheme, albumAccentByType, albumImportTitle, albumTypeLabel } from '../utils/AlbumTheme';
 
 @Preview
 @Entry
 @Component
 struct GifsPage {
   @State rootFolders: Folder[] = [];
-  @State newFolderName: string = '';
-  private dialogController: CustomDialogController | null = null;
+  @State menuVisible: boolean = false;
+
+  private accent(): AlbumAccent {
+    return albumAccentByType('gif');
+  }
 
   aboutToAppear(): void {
     gifData.init(getContext(this));
     this.loadRootFolders();
   }
 
-  loadRootFolders(): void {
+  private loadRootFolders(): void {
     this.rootFolders = gifData.getRootFolders();
   }
 
-  showNewFolderDialog(): void {
-    this.dialogController = new CustomDialogController({
-      builder: NewFolderDialog({
-        folderName: this.newFolderName,
-        onConfirm: (name: string) => {
-          if (name.trim()) {
-            gifData.addFolder(name.trim(), '');
-            this.loadRootFolders();
-          }
-        }
-      }),
-      autoCancel: true,
-      alignment: DialogAlignment.Center
-    });
-    this.dialogController.open();
+  private getCount(folderId: string): number {
+    return gifData.getSubFolders(folderId).length + gifData.getItemsInFolder(folderId).length;
   }
 
-  getFolderItemCount(folderId: string): number {
-    const subFolders = gifData.getSubFolders(folderId);
-    const items = gifData.getItemsInFolder(folderId);
-    return subFolders.length + items.length;
+  private openFolder(folder: Folder): void {
+    router.pushUrl({ url: 'pages/FolderDetailPage', params: { folderId: folder.id, folderName: folder.name, contentType: 'gif' } });
   }
 
-  navigateToFolder(folder: Folder): void {
-    router.pushUrl({
-      url: 'pages/FolderDetailPage',
-      params: {
-        folderId: folder.id,
-        folderName: folder.name,
-        contentType: 'gif'
-      }
-    });
+  private goImport(): void {
+    this.menuVisible = false;
+    router.pushUrl({ url: 'pages/ImportGuidePage', params: { folderId: '', folderName: '主目录', contentType: 'gif' } });
+  }
+
+  private createRootFolder(): void {
+    this.menuVisible = false;
+    gifData.addFolder(`动图目录 ${this.rootFolders.length + 1}`, '');
+    this.loadRootFolders();
+  }
+
+  @Builder
+  private Header() {
+    Row({ space: 14 }) {
+      Stack() { Text('←').fontFamily(AlbumTheme.fontFamily).fontSize(24).fontWeight(FontWeight.Bold).fontColor(AlbumTheme.line) }
+      .width(42).height(42).backgroundColor(AlbumTheme.paper).border({ width: AlbumTheme.borderWidth, color: AlbumTheme.line }).borderRadius(22).onClick(() => { router.back(); })
+      Text('动图').fontFamily(AlbumTheme.fontFamily).fontSize(28).fontWeight(FontWeight.Bold).fontColor(AlbumTheme.text).layoutWeight(1)
+      Stack() { Text('+').fontFamily(AlbumTheme.fontFamily).fontSize(28).fontWeight(FontWeight.Bold).fontColor(AlbumTheme.text) }
+      .width(42).height(42).backgroundColor(AlbumTheme.paper).border({ width: AlbumTheme.borderWidth, color: AlbumTheme.line }).borderRadius(22)
+      .bindMenu(this.menuVisible, [
+        { value: '新建目录', action: () => { this.createRootFolder(); } },
+        { value: albumImportTitle('gif'), action: () => { this.goImport(); } }
+      ])
+      .onClick(() => { this.menuVisible = true; })
+    }.width('100%')
+  }
+
+  @Builder
+  private FolderRow(folder: Folder, index: number) {
+    Row({ space: 16 }) {
+      Stack() { Text('▣').fontFamily(AlbumTheme.fontFamily).fontSize(22).fontWeight(FontWeight.Bold).fontColor('#FFFFFF') }
+      .width(52).height(42).backgroundColor(index % 3 === 0 ? '#FFD166' : index % 3 === 1 ? '#78D6B5' : '#6C8DFF').border({ width: AlbumTheme.borderWidth, color: AlbumTheme.line }).borderRadius(10)
+      Column({ space: 4 }) {
+        Text(folder.name).fontFamily(AlbumTheme.fontFamily).fontSize(18).fontWeight(FontWeight.Bold).fontColor(AlbumTheme.text)
+        Text(`${this.getCount(folder.id)} 项`).fontFamily(AlbumTheme.fontFamily).fontSize(13).fontColor(AlbumTheme.subText)
+      }.alignItems(HorizontalAlign.Start).layoutWeight(1)
+      Text('›').fontFamily(AlbumTheme.fontFamily).fontSize(24).fontWeight(FontWeight.Bold).fontColor(AlbumTheme.text)
+    }
+    .width('100%').padding({ left: 20, right: 18, top: 18, bottom: 18 }).backgroundColor(AlbumTheme.paper).border({ width: AlbumTheme.borderWidth, color: AlbumTheme.line }).borderRadius(AlbumTheme.cardRadius)
+    .onClick(() => { this.openFolder(folder); })
   }
 
   build() {
-    Column() {
-      Row({ space: 12 }) {
-        Button('←')
-          .width(36).height(36).fontSize(18).fontColor('#111827')
-          .backgroundColor('#FFFFFF').borderRadius(18)
-          .onClick(() => { router.back(); })
-
-        Text('动图')
-          .fontSize(20).fontWeight(FontWeight.Bold).fontColor('#111827')
-          .layoutWeight(1)
-
-        Button({ type: ButtonType.Normal }) {
-          Text('⋮')
-            .fontSize(24).fontColor('#F59E0B')
+    Scroll() {
+      Column({ space: 18 }) {
+        this.Header()
+        Column({ space: 6 }) {
+          Text(`${albumTypeLabel('gif')}目录`).fontFamily(AlbumTheme.fontFamily).fontSize(24).fontWeight(FontWeight.Bold).fontColor(AlbumTheme.text)
+          Text('右上角 + 展开后可新建目录或导入').fontFamily(AlbumTheme.fontFamily).fontSize(14).fontColor(AlbumTheme.subText)
         }
-        .width(36).height(36)
-        .backgroundColor('#FFFFFF').borderRadius(18)
-        .bindMenu([
-          {
-            value: '新建目录',
-            action: () => { this.showNewFolderDialog(); }
-          },
-          {
-            value: '导入动图',
-            action: () => {
-              router.pushUrl({
-                url: 'pages/ImportGuidePage',
-                params: { folderId: '', folderName: '主目录', contentType: 'gif' }
-              });
-            }
-          }
-        ])
+        .alignItems(HorizontalAlign.Start).width('100%').padding({ left: 22, right: 22, top: 22, bottom: 22 }).backgroundColor(this.accent().tint).border({ width: AlbumTheme.borderWidth, color: AlbumTheme.line }).borderRadius(AlbumTheme.cardRadius)
+        if (this.rootFolders.length === 0) {
+          Column({ space: 14 }) {
+            Text(this.accent().emptyIcon).fontFamily(AlbumTheme.fontFamily).fontSize(56).fontWeight(FontWeight.Bold).fontColor(AlbumTheme.text)
+            Text('暂无目录').fontFamily(AlbumTheme.fontFamily).fontSize(20).fontWeight(FontWeight.Bold).fontColor(AlbumTheme.text)
+            Text('点击右上角 + 创建目录').fontFamily(AlbumTheme.fontFamily).fontSize(14).fontColor(AlbumTheme.subText)
+          }.width('100%').padding({ top: 34, bottom: 34 }).backgroundColor(AlbumTheme.paper).border({ width: AlbumTheme.borderWidth, color: AlbumTheme.line }).borderRadius(AlbumTheme.cardRadius)
+        } else {
+          Column({ space: 14 }) {
+            ForEach(this.rootFolders, (folder: Folder, index: number) => {
+              this.FolderRow(folder, index)
+            }, (folder: Folder) => folder.id)
+          }.width('100%')
+        }
       }
-      .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 12 })
-
-      if (this.rootFolders.length === 0) {
-        Column({ space: 12 }) {
-          Text('🎭').fontSize(64)
-          Text('暂无目录')
-            .fontSize(18).fontWeight(FontWeight.Medium).fontColor('#6B7280')
-          Text('点击右上角菜单创建目录')
-            .fontSize(14).fontColor('#9CA3AF')
-        }
-        .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
-      } else {
-        List({ space: 8 }) {
-          ForEach(this.rootFolders, (folder: Folder) => {
-            ListItem() {
-              Row({ space: 12 }) {
-                Text('🗂️').fontSize(28)
-
-                Column({ space: 4 }) {
-                  Text(folder.name)
-                    .fontSize(16).fontWeight(FontWeight.Medium).fontColor('#111827')
-                  Text(`${this.getFolderItemCount(folder.id)} 项`)
-                    .fontSize(13).fontColor('#9CA3AF')
-                }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-
-                Text('›')
-                  .fontSize(24).fontColor('#D1D5DB')
-              }
-              .width('100%')
-              .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-              .backgroundColor('#FFFFFF')
-              .borderRadius(8)
-            }
-            .onClick(() => { this.navigateToFolder(folder); })
-          }, (folder: Folder) => folder.id)
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8 })
-        .layoutWeight(1)
-      }
+      .padding({ left: AlbumTheme.screenPadding, right: AlbumTheme.screenPadding, top: AlbumTheme.titleTop, bottom: 28 }).width('100%')
     }
-    .width('100%').height('100%').backgroundColor('#F3F6FC')
-  }
-}
-
-@CustomDialog
-struct NewFolderDialog {
-  @State folderName: string = '';
-  onConfirm?: (name: string) => void;
-  controller?: CustomDialogController;
-
-  build() {
-    Column({ space: 16 }) {
-      Text('新建目录')
-        .fontSize(18).fontWeight(FontWeight.Bold).fontColor('#111827')
-
-      TextInput({ placeholder: '请输入目录名称', text: this.folderName })
-        .width('100%')
-        .onChange((value: string) => { this.folderName = value; })
-
-      Row({ space: 12 }) {
-        Button('取消')
-          .fontSize(15).fontColor('#6B7280')
-          .backgroundColor('#F3F4F6')
-          .layoutWeight(1)
-          .onClick(() => { this.controller?.close(); })
-
-        Button('确认')
-          .fontSize(15).fontColor('#FFFFFF')
-          .backgroundColor('#F59E0B')
-          .layoutWeight(1)
-          .onClick(() => {
-            if (this.onConfirm) {
-              this.onConfirm(this.folderName);
-            }
-            this.controller?.close();
-          })
-      }
-      .width('100%')
-    }
-    .padding(24)
-    .backgroundColor('#FFFFFF')
-    .borderRadius(12)
+    .scrollBar(BarState.Off).width('100%').height('100%').backgroundColor(AlbumTheme.pageBg)
   }
 }
