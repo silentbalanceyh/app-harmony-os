@@ -10,6 +10,7 @@ import { userAuth } from '@kit.UserAuthenticationKit';
 struct FaceIdPage {
   @State faceIdEnabled: boolean = false;
   @State folderAccess: boolean = false;
+  @State authStatus: string = '';
 
   aboutToAppear(): void {
     void this.loadSettings();
@@ -25,12 +26,63 @@ struct FaceIdPage {
     this.folderAccess = await settingsStore.getFolderFaceIdAccess();
   }
 
+  private async checkFaceIdSupport(): Promise<boolean> {
+    try {
+      const auth = userAuth.getUserAuthInstance({
+        challenge: new Uint8Array([0]),
+        authType: [userAuth.UserAuthType.FACE],
+        authTrustLevel: userAuth.AuthTrustLevel.ATL3
+      }, { title: '验证 Face ID' });
+      return true;
+    } catch (err) {
+      console.error('Face ID check failed:', JSON.stringify(err));
+      return false;
+    }
+  }
+
+  private async performFaceAuth(): Promise<boolean> {
+    try {
+      const authInstance = userAuth.getUserAuthInstance({
+        challenge: new Uint8Array([1, 2, 3, 4]),
+        authType: [userAuth.UserAuthType.FACE],
+        authTrustLevel: userAuth.AuthTrustLevel.ATL3
+      }, { title: '验证 Face ID 以开启' });
+
+      return new Promise<boolean>((resolve) => {
+        authInstance.on('result', {
+          onResult(result: userAuth.UserAuthResult) {
+            if (result.result === 0) {
+              resolve(true);
+            } else {
+              resolve(false);
+            }
+            authInstance.off('result');
+          }
+        });
+        authInstance.start();
+      });
+    } catch (err) {
+      console.error('Face ID auth failed:', JSON.stringify(err));
+      return false;
+    }
+  }
+
   private async toggleFaceId(isOn: boolean): Promise<void> {
     if (isOn) {
       const supported = await this.checkFaceIdSupport();
       if (!supported) {
         promptAction.showToast({
           message: '当前设备不支持 Face ID',
+          duration: 2000
+        });
+        return;
+      }
+      this.authStatus = '正在验证 Face ID...';
+      const authenticated = await this.performFaceAuth();
+      this.authStatus = '';
+      if (!authenticated) {
+        promptAction.showToast({
+          message: 'Face ID 验证失败，未开启',
           duration: 2000
         });
         return;
@@ -44,21 +96,14 @@ struct FaceIdPage {
     });
   }
 
-  private async checkFaceIdSupport(): Promise<boolean> {
-    try {
-      const auth = userAuth.getUserAuthInstance({
-        challenge: new Uint8Array([0]),
-        authType: [userAuth.UserAuthType.FACE],
-        authTrustLevel: userAuth.AuthTrustLevel.ATL3
-      }, { title: 'Face ID 验证' });
-      return true;
-    } catch (err) {
-      console.error('Face ID check failed:', JSON.stringify(err));
-      return false;
-    }
-  }
-
   private async toggleFolderAccess(isOn: boolean): Promise<void> {
+    if (isOn && !this.faceIdEnabled) {
+      promptAction.showToast({
+        message: '请先开启 Face ID 解锁',
+        duration: 2000
+      });
+      return;
+    }
     await settingsStore.setFolderFaceIdAccess(isOn);
     this.folderAccess = isOn;
     promptAction.showToast({
@@ -79,6 +124,14 @@ struct FaceIdPage {
         Blank()
       }
       .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 12 })
+
+      if (this.authStatus) {
+        Row() {
+          LoadingProgress().width(20).height(20).color('#6366F1')
+          Text(this.authStatus).fontSize(14).fontColor('#6366F1').margin({ left: 8 })
+        }
+        .width('100%').padding({ left: 16, right: 16 })
+      }
 
       Column({ space: 0 }) {
         Row() {

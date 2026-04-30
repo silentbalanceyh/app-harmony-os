@@ -1,12 +1,14 @@
 import router from '@ohos.router';
 import { promptAction } from '@kit.ArkUI';
-import { albumData, videoData, gifData, docData, recordData, MediaItem } from '../../models/AlbumData';
+import { albumData, videoData, gifData, docData, recordData, MediaItem, DeletedFolder } from '../../models/AlbumData';
 
 interface RecycleItem {
   id: string;
   name: string;
   typeLabel: string;
   managerIndex: number;
+  isFolder: boolean;
+  itemCount: number;
 }
 
 @Preview
@@ -29,6 +31,7 @@ struct RecycleBinPage {
     let autoCleaned = 0;
 
     managers.forEach((mgr, idx) => {
+      // Auto-clean expired items
       const deleted = mgr.getDeletedItems();
       const expired = deleted.filter((item: MediaItem) => item.deleteTime && (now - item.deleteTime) > this.THIRTY_DAYS_MS);
       expired.forEach((item: MediaItem) => mgr.permanentlyDeleteItem(item.id));
@@ -36,13 +39,39 @@ struct RecycleBinPage {
         autoCleaned += expired.length;
       }
 
-      mgr.getDeletedItems().forEach((item: MediaItem) => {
+      // Auto-clean expired folders
+      const deletedFolders = mgr.getDeletedFolders();
+      const expiredFolders = deletedFolders.filter((df: DeletedFolder) =>
+        df.folder.deleteTime && (now - df.folder.deleteTime) > this.THIRTY_DAYS_MS
+      );
+      expiredFolders.forEach((df: DeletedFolder) => mgr.permanentlyDeleteFolder(df.folder.id));
+      autoCleaned += expiredFolders.length;
+
+      // Add deleted folders first
+      mgr.getDeletedFolders().forEach((df: DeletedFolder) => {
         result.push({
-          id: item.id,
-          name: item.name,
+          id: df.folder.id,
+          name: df.folder.name,
           typeLabel: typeLabels[idx],
-          managerIndex: idx
+          managerIndex: idx,
+          isFolder: true,
+          itemCount: df.itemCount
         });
+      });
+
+      // Add deleted items (exclude items belonging to deleted folders)
+      const folderIds = new Set(mgr.getDeletedFolders().map(df => df.folder.id));
+      mgr.getDeletedItems().forEach((item: MediaItem) => {
+        if (!folderIds.has(item.folderId)) {
+          result.push({
+            id: item.id,
+            name: item.name,
+            typeLabel: typeLabels[idx],
+            managerIndex: idx,
+            isFolder: false,
+            itemCount: 0
+          });
+        }
       });
     });
 
@@ -62,7 +91,12 @@ struct RecycleBinPage {
   }
 
   handleRestore(item: RecycleItem): void {
-    this.getManager(item.managerIndex).restoreItem(item.id);
+    const mgr = this.getManager(item.managerIndex);
+    if (item.isFolder) {
+      mgr.restoreFolder(item.id);
+    } else {
+      mgr.restoreItem(item.id);
+    }
     this.loadItems();
     promptAction.showToast({
       message: `已恢复: ${item.name}`,
@@ -71,7 +105,12 @@ struct RecycleBinPage {
   }
 
   handleDelete(item: RecycleItem): void {
-    this.getManager(item.managerIndex).permanentlyDeleteItem(item.id);
+    const mgr = this.getManager(item.managerIndex);
+    if (item.isFolder) {
+      mgr.permanentlyDeleteFolder(item.id);
+    } else {
+      mgr.permanentlyDeleteItem(item.id);
+    }
     this.loadItems();
     promptAction.showToast({
       message: `已永久删除: ${item.name}`,
@@ -137,9 +176,15 @@ struct RecycleBinPage {
           ForEach(this.items, (item: RecycleItem) => {
             ListItem() {
               Row({ space: 12 }) {
+                Text(item.isFolder ? '📁' : '📄')
+                  .fontSize(24)
+
                 Column({ space: 2 }) {
                   Text(item.name).fontSize(14).fontColor('#111827')
-                  Text(item.typeLabel).fontSize(12).fontColor('#9CA3AF')
+                  Text(item.isFolder
+                    ? `${item.typeLabel} · ${item.itemCount} 项`
+                    : item.typeLabel
+                  ).fontSize(12).fontColor('#9CA3AF')
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
@@ -156,7 +201,7 @@ struct RecycleBinPage {
               }
               .width('100%').padding(16).backgroundColor('#FFFFFF').borderRadius(8)
             }
-          }, (item: RecycleItem) => item.id)
+          }, (item: RecycleItem) => item.id + (item.isFolder ? '_folder' : '_item'))
         }
         .width('100%').layoutWeight(1).padding({ left: 16, right: 16 })
       }

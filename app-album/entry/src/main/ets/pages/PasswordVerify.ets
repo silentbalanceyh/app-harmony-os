@@ -2,8 +2,18 @@ import common from '@ohos.app.ability.common';
 import { PasswordStore } from '../utils/PasswordStore';
 import { settingsStore } from '../utils/SettingsStore';
 import { cameraPicker } from '@kit.CameraKit';
+import { userAuth } from '@kit.UserAuthenticationKit';
 import router from '@ohos.router';
 import { AlbumTheme } from '../utils/AlbumTheme';
+import { fileRepo } from '../utils/FileRepoUtil';
+import dataPreferences from '@ohos.data.preferences';
+import fs from '@ohos.file.fs';
+import util from '@ohos.util';
+
+interface IntruderRecord {
+  photoPath: string;
+  timestamp: number;
+}
 
 @Preview
 @Entry
@@ -11,8 +21,11 @@ import { AlbumTheme } from '../utils/AlbumTheme';
 struct PasswordVerify {
   @State inputDigits: string = '';
   @State errorMsg: string = '';
+  @State faceIdAvailable: boolean = false;
+  @State faceIdEnabled: boolean = false;
   private store: PasswordStore = new PasswordStore();
   private maxLen: number = 6;
+  private intruderRecords: IntruderRecord[] = [];
 
   private getContext(): common.UIAbilityContext {
     return this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -21,6 +34,88 @@ struct PasswordVerify {
   async aboutToAppear(): Promise<void> {
     await this.store.init(this.getContext());
     await settingsStore.init(this.getContext());
+    this.faceIdEnabled = await settingsStore.getFaceIdEnabled();
+    if (this.faceIdEnabled) {
+      this.faceIdAvailable = await this.checkFaceIdSupport();
+      if (this.faceIdAvailable) {
+        void this.tryFaceIdUnlock();
+      }
+    }
+    this.loadIntruderRecords();
+  }
+
+  private loadIntruderRecords(): void {
+    try {
+      const context = this.getContext();
+      const recordsPath = context.filesDir + '/intruder_records.json';
+      if (fs.accessSync(recordsPath)) {
+        const file = fs.openSync(recordsPath, fs.OpenMode.READ_ONLY);
+        const stat = fs.statSync(recordsPath);
+        const buf = new ArrayBuffer(stat.size);
+        fs.readSync(file.fd, buf);
+        fs.closeSync(file);
+        const decoder = util.TextDecoder.create('utf-8');
+        const content = decoder.decodeToString(new Uint8Array(buf));
+        this.intruderRecords = JSON.parse(content) as IntruderRecord[];
+      }
+    } catch {
+      this.intruderRecords = [];
+    }
+  }
+
+  private saveIntruderRecords(): void {
+    try {
+      const context = this.getContext();
+      const recordsPath = context.filesDir + '/intruder_records.json';
+      const file = fs.openSync(recordsPath, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE);
+      const encoder = new util.TextEncoder();
+      const data = encoder.encodeInto(JSON.stringify(this.intruderRecords));
+      fs.writeSync(file.fd, data.buffer);
+      fs.closeSync(file);
+    } catch (err) {
+      console.error('Save intruder records failed:', JSON.stringify(err));
+    }
+  }
+
+  private async checkFaceIdSupport(): Promise<boolean> {
+    try {
+      userAuth.getUserAuthInstance({
+        challenge: new Uint8Array([0]),
+        authType: [userAuth.UserAuthType.FACE],
+        authTrustLevel: userAuth.AuthTrustLevel.ATL3
+      }, { title: 'Face ID' });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async tryFaceIdUnlock(): Promise<void> {
+    try {
+      const authInstance = userAuth.getUserAuthInstance({
+        challenge: new Uint8Array([5, 6, 7, 8]),
+        authType: [userAuth.UserAuthType.FACE],
+        authTrustLevel: userAuth.AuthTrustLevel.ATL3
+      }, { title: 'Face ID 解锁加密相册' });
+
+      const result = await new Promise<number>((resolve) => {
+        authInstance.on('result', {
+          onResult(authResult: userAuth.UserAuthResult) {
+            resolve(authResult.result);
+            authInstance.off('result');
+          }
+        });
+        authInstance.start();
+      });
+
+      if (result === 0) {
+        router.replaceUrl({ url: 'pages/MainPage' });
+      } else {
+        this.errorMsg = 'Face ID 未识别，请输入密码';
+      }
+    } catch {
+      this.errorMsg = 'Face ID 不可用，请输入密码';
+    }
   }
 
   private onDigit(d: string): void {
@@ -41,11 +136,23 @@ struct PasswordVerify {
   private async doVerify(): Promise<void> {
     const valid = await this.store.verifyPassword(this.inputDigits);
     if (valid) {
+      await this.recordActivity();
       router.replaceUrl({ url: 'pages/MainPage' });
     } else {
       this.errorMsg = '密码错误，请重试';
       this.inputDigits = '';
       await this.captureIntruderPhoto();
+    }
+  }
+
+  private async recordActivity(): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(this.getContext(), 'album_security');
+      await prefs.put('last_activity_time', Date.now());
+      await prefs.put('return_after_unlock', false);
+      await prefs.flush();
+    } catch {
+      // silent
     }
   }
 
@@ -58,7 +165,12 @@ struct PasswordVerify {
       const result = await cameraPicker.pick(this.getContext(), [cameraPicker.PickerMediaType.PHOTO], { cameraPosition: 0 });
       const resultUri: string = (result as Object as Record<string, string>).resultUri ?? '';
       if (resultUri.length > 0) {
-        console.info('Intruder photo captured:', resultUri);
+        const record: IntruderRecord = {
+          photoPath: resultUri,
+          timestamp: Date.now()
+        };
+        this.intruderRecords.push(record);
+        this.saveIntruderRecords();
       }
     } catch (err) {
       console.error('Intruder photo capture failed:', JSON.stringify(err));
@@ -125,7 +237,23 @@ struct PasswordVerify {
         this.KeyRow(['4', '5', '6'])
         this.KeyRow(['7', '8', '9'])
         Row({ space: 20 }) {
-          this.KeyCell('')
+          if (this.faceIdAvailable && this.faceIdEnabled) {
+            Stack() {
+              Text('👤')
+                .fontFamily(AlbumTheme.fontFamily)
+                .fontSize(26)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(AlbumTheme.text)
+            }
+            .width(78)
+            .height(72)
+            .backgroundColor('#E8E1FF')
+            .border({ width: AlbumTheme.borderWidth, color: AlbumTheme.line })
+            .borderRadius(12)
+            .onClick(() => { void this.tryFaceIdUnlock(); })
+          } else {
+            this.KeyCell('')
+          }
           this.KeyCell('0')
           this.DeleteCell()
         }

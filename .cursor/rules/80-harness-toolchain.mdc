@@ -1,0 +1,49 @@
+# HarmonyOS Harness Toolchain Rules
+
+## Purpose
+
+Use this rule before building, starting, previewing, or diagnosing any app in this workspace.
+
+## Preferred Commands
+
+- Build with `cd <app> && ./dev-build.sh` on macOS/Linux or `cd <app> && dev-build.bat` on Windows.
+- Start with `cd <app> && ./dev-start.sh` on macOS/Linux or `cd <app> && dev-start.bat` on Windows.
+- Stop local hvigor processes with `cd <app> && ./dev-stop.sh` or `cd <app> && dev-stop.bat`.
+- Do not call `hvigorw` directly for normal development work.
+- Do not hand-assemble `hdc install` plus `aa start` command chains before trying the app harness scripts.
+
+## Launch And Preflight
+
+- `dev-start.*` is the preferred local development entry.
+- `run-start.*` is the release-oriented start path.
+- Harness scripts are expected to perform device/simulator preflight before install and launch.
+- If no HarmonyOS target is connected, scripts should attempt the root simulator bootstrap first.
+
+## SDK Environment
+
+- SDK setup should flow through the harness `ensure_sdk_environment` logic.
+- Do not manually set SDK environment variables in ad hoc commands unless diagnosing the harness itself.
+- For SDK failures, inspect the harness output before changing project files.
+
+## Diagnosis Order
+
+When a build or start fails, check in this order:
+
+1. `hvigorw` path and executable availability in the target app or `PATH`.
+2. DevEco SDK shim and SDK metadata resolution.
+3. `build-profile.json5` at the app and module levels.
+4. `oh-package.json5` and dependency installation state.
+5. Signing configuration and generated signing artifacts.
+6. Harness preflight output for missing target devices, failed install, failed launch, or reported error codes.
+7. Runtime logs with `hdc shell hilog -x`.
+
+## Logging
+
+- Use `hdc shell hilog -x` for runtime logs.
+- Use `hdc shell aa dump --mission-list` for ability state.
+- Avoid adding broad `console.log` noise to app code for issues that the harness or system logs can diagnose.
+
+## Previewer
+
+- Use `cd <app> && ./dev-preview.sh [page]` or `cd <app> && dev-preview.bat [page]` when previewing ArkUI pages.
+- Previewer support depends on DevEco Studio and SDK behavior; if preview output is unavailable or inconsistent, fall back to `dev-build.*` plus simulator/device verification and state the limitation.

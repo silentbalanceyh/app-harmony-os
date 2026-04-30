@@ -13,6 +13,7 @@
 - Read `.cursor/rules/*.mdc` in lexical order.
 - Inspect the target `app-*` directory before editing code.
 - Read the target app’s `app.json`, `build-profile.json5`, `entry/src/main/module.json5`, and launch scripts.
+- When a build, launch, runtime, or agent workflow problem appears, check `docs/troubleshooting.md` before inventing a new diagnosis path.
 
 ## Documentation Sync
 
@@ -20,3 +21,11 @@
 - If onboarding, scripts, architecture, runtime UX, or development flow changes, update `CLAUDE.md`.
 - If the change should be machine-loaded early in future sessions, update the relevant `.cursor/rules/*.mdc` topic file.
 - Prefer updating only the topical MDC file instead of duplicating the same rule in every file.
+
+## Knowledge Base Documents
+
+- Architecture decisions belong in `docs/adr/` using Status, Context, Decision, and Consequences sections.
+- Troubleshooting guidance belongs in `docs/troubleshooting.md` and should include symptoms, root cause, fix steps, and verification commands.
+- `app.json` metadata changes should be reflected in `docs/app-json-schema.md`.
+- App-level product baselines belong in each app's `REQ.md`.
+- Workspace-level notable changes belong in `CHANGELOG.md`.

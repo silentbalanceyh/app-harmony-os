@@ -2,7 +2,8 @@ import common from '@ohos.app.ability.common';
 import Want from '@ohos.app.ability.Want';
 import wantConstant from '@ohos.app.ability.wantConstant';
 import Package from '@system.package';
-import SoundEffectPlayer from '../utils/SoundEffectPlayer';
+import SoundEffectPlayer from '../_shared/audio/SoundEffectPlayer';
+import Logger from '../_shared/utils/Logger';
 
 interface ManagedApp {
   id: string;
@@ -20,6 +21,7 @@ interface ManagedApp {
 const START_WITHOUT_TIPS_FLAG: number = wantConstant.Flags.FLAG_START_WITHOUT_TIPS;
 const COMMAND_OPEN_ENTRY: string = 'open-entry';
 const LAUNCH_SOUND_FILE: string = 'launch.wav';
+const LOGGER: Logger = Logger.create('app-center');
 
 @Entry
 @Component
@@ -194,9 +196,10 @@ struct Index {
 
   private async openManagedApp(target: ManagedApp): Promise<void> {
     try {
+      LOGGER.info('Opening managed app: ' + target.id);
       await this.getAbilityContext().startAbility(this.buildEntryWant(target));
     } catch (err) {
-      console.error('Open app failed: ' + JSON.stringify(err));
+      LOGGER.error('Open app failed: ' + Logger.stringify(err));
     }
   }
 

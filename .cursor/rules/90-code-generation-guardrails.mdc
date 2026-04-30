@@ -1,0 +1,49 @@
+# HarmonyOS Code Generation Guardrails
+
+## Purpose
+
+Use this rule before generating any app code, configuration, network integration, storage logic, or security-sensitive behavior.
+
+## Secrets
+
+- Do not generate hard-coded secrets, tokens, passwords, API keys, private keys, or signing credentials.
+- Use placeholders only in documentation or examples, and label them clearly as placeholders.
+- Do not commit machine-local credential paths unless the workspace already treats them as non-secret generated configuration.
+
+## Network Permissions
+
+- Do not generate network request code unless `entry/src/main/module.json5` or the relevant manifest already declares `ohos.permission.INTERNET`.
+- If network access is required, update permissions deliberately and document why the app needs it.
+- Keep request endpoints configurable; do not bury production URLs in UI components.
+
+## UI Thread Safety
+
+- Do not perform expensive synchronous work in ArkUI render functions, component builders, lifecycle hot paths, or gesture callbacks.
+- Move heavy parsing, file access, crypto, media processing, and network work into services or async flows.
+- Keep UI state updates small and typed.
+
+## HarmonyOS Permission Model
+
+- Do not generate code that bypasses HarmonyOS permissions, system dialogs, app sandboxing, or ability export rules.
+- Do not assume app code can restyle or suppress platform confirmation dialogs.
+- Before using protected capabilities, check the manifest permissions and request flow.
+
+## API Verification
+
+- Do not invent HarmonyOS modules, methods, resources, or decorators.
+- Check current local examples, SDK documentation, or official documentation before using unfamiliar APIs.
+- Prefer patterns already present in the target app when they satisfy the requirement.
+
+## Security And Crypto
+
+- File encryption and security-sensitive cryptography must use HarmonyOS `@ohos.security.cryptoFramework`.
+- Do not hand-write encryption algorithms, password hashing, random number generators, or signature schemes.
+- Keep security code isolated from UI components and document the storage and key-handling assumptions.
+
+## Plugin And Extension Hygiene
+
+- LSP and other IDE plugins that are disabled in `settings.json` are considered compliant; the Harness does not require deleting their files from active plugin/cache/data/marketplace paths.
+- If a plugin must be fully removed, explicitly delete its directory and clear related cache entries; disabled alone is not sufficient.
+- The Harness audit script checks `settings.json` for `enabled: false` as the pass criterion, not directory absence.
+- For MCP health cache (`~/.claude/mcp-health-cache.json`), a `status: healthy` entry with a timestamp older than 30 days is treated as stale; the audit should flag it rather than treat it as passing.
+- For blocklist (`~/.claude/plugins/blocklist.json`), an empty list with a `fetchedAt` older than 30 days should be flagged as potentially stale, not silently accepted.

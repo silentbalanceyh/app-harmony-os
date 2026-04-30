@@ -46,6 +46,7 @@ app-harmony-os/
 ├── app-security/               # Security app
 ├── app-hello/                  # Sample business app
 ├── app-medication/             # Medication reminder app for elderly health
+├── app-album/                  # Encrypted private photo album app
 ├── .cursor/rules/              # MDC rule files for fast machine onboarding
 ├── .r2mo/                      # Hidden task, requirement, design material
 ├── .logs/                      # Root-level simulator startup logs
@@ -92,10 +93,15 @@ app-harmony-os/
   - Focuses on medication schedules, taken-state confirmation, and caregiver escalation.
   - Can return to `app-center`.
 
+- `app-album`
+  - Encrypted private photo album app.
+  - Provides password-protected media storage, Face ID unlock, intruder detection, and encrypted backup.
+  - Can return to `app-center`.
+
 ### Runtime Interaction Model
 
 - `app-center` is the default desktop entry.
-- `app-monitor`, `app-security`, `app-hello`, and `app-medication` are hidden from the desktop by default.
+- `app-monitor`, `app-security`, `app-hello`, `app-medication`, and `app-album` are hidden from the desktop by default.
 - `app-center -> other app` may show a system confirmation dialog.
   - This dialog is controlled by HarmonyOS.
   - App code cannot restyle, rewrite, or remove it reliably.
@@ -153,8 +159,8 @@ entry/src/main/ets/
 Current app relationships are defined in `app.json`:
 
 - `app-center`
-  - depends on `app-monitor`, `app-security`, `app-hello`, `app-medication`
-  - launch targets `app-monitor`, `app-security`, `app-hello`, `app-medication`
+  - depends on `app-monitor`, `app-security`, `app-hello`, `app-medication`, `app-album`
+  - launch targets `app-monitor`, `app-security`, `app-hello`, `app-medication`, `app-album`
 
 - `app-monitor`
   - depends on `app-center`, `app-security`, `app-hello`, `app-medication`
@@ -170,6 +176,10 @@ Current app relationships are defined in `app.json`:
 
 - `app-medication`
   - depends on `app-center`, `app-monitor`, `app-security`, `app-hello`
+  - launch target `app-center`
+
+- `app-album`
+  - depends on `app-center`
   - launch target `app-center`
 
 ## Task Material Conventions
@@ -363,13 +373,27 @@ Machine-readable rule files belong under:
 .cursor/rules/
 ```
 
-Current rule file:
+Current rule files:
 
 - `.cursor/rules/00-harmony-workspace.mdc`
 - `.cursor/rules/10-workspace-structure.mdc`
 - `.cursor/rules/20-launch-and-runtime.mdc`
 - `.cursor/rules/30-scripts-and-debug.mdc`
 - `.cursor/rules/40-task-workflow-and-docs.mdc`
+- `.cursor/rules/50-app-initialization.mdc`
+- `.cursor/rules/60-arkts-coding-standards.mdc`
+- `.cursor/rules/70-module-boundaries.mdc`
+- `.cursor/rules/75-cross-app-communication.mdc`
+- `.cursor/rules/80-harness-toolchain.mdc`
+- `.cursor/rules/90-code-generation-guardrails.mdc`
+
+Rule responsibilities:
+
+- `60-arkts-coding-standards.mdc`: ArkTS/ArkUI syntax, imports, file APIs, naming, state, and gesture conventions.
+- `70-module-boundaries.mdc`: app isolation, cross-app communication, desktop-entry ownership, and new-app boundary rules.
+- `75-cross-app-communication.mdc`: Want-based launch, AppBridgeService protocol, BridgeCommand/BridgeParameters types, and cross-app data flow conventions.
+- `80-harness-toolchain.mdc`: preferred build/start/preview commands, preflight, SDK setup, signing, error diagnosis, and log usage.
+- `90-code-generation-guardrails.mdc`: secrets, network permissions, UI thread safety, permission model, API verification, and crypto rules.
 
 Any future session should read them after `AGENTS.md` and `CLAUDE.md`, in lexical order.
 

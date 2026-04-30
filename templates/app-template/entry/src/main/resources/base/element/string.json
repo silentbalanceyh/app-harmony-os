@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "_LABEL_ 模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "_LABEL_ 启动能力"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "_LABEL_"
+    }
+  ]
+}

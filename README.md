@@ -9,6 +9,7 @@ This repository is a documentation-first HarmonyOS phone workspace. The reposito
 - `app-security`: security app
 - `app-hello`: sample business app
 - `app-medication`: medication reminder app focused on elderly health
+- `app-album`: encrypted private photo album app
 
 ## Directory Layout
 
@@ -19,6 +20,7 @@ app-harmony-os/
 ├── app-security/
 ├── app-hello/
 ├── app-medication/
+├── app-album/
 ├── .cursor/rules/
 ├── .r2mo/
 ├── AGENTS.md

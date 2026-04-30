@@ -1,0 +1,34 @@
+# HarmonyOS Cross-App Communication Rules
+
+## Shared Protocol
+
+- Keep cross-app command names and payload shapes in `shared/ets/bridge/AppBridgeTypes.ets`.
+- Use the shared `BridgeCommand`, `BridgeParameters`, `BridgeResponse`, and `AppTarget` types when building Want payloads or handling app-service requests.
+- Prefer importing shared modules through `entry/src/main/ets/_shared/...` after the app scripts link `shared/ets/` into the app.
+
+## Want Construction
+
+- App-to-app page launches should use typed Want parameters and include:
+  - `command`
+  - `sourceBundleName`
+  - `sourceModuleName`
+  - `sourceAbilityName`
+  - `timestamp` or `startedAt`
+- Use `FLAG_START_WITHOUT_TIPS` only for flows that already match the workspace launch model.
+- Do not rely on untyped ad hoc command strings when a `BridgeCommand` value exists.
+
+## AppServiceExtensionAbility
+
+- App bridge services must remain small dispatchers:
+  - parse `want.parameters` into `BridgeParameters`
+  - switch or branch by `BridgeCommand`
+  - call `context.startAbility` or a focused platform API
+  - terminate the service after handling the request
+- Do not put screen business logic inside `AppBridgeService.ets`.
+- Keep desktop shortcut visibility commands explicit and typed; do not overload `OPEN_ENTRY`.
+
+## Ownership
+
+- `shared/ets/bridge/` owns protocol definitions and Want helpers.
+- Each `app-*` still owns its app identity, labels, module names, ability names, and service-specific platform behavior.
+- Shared modules should be promoted to a HAR package only after the symlink-based `_shared` flow is stable across apps.

@@ -15,6 +15,7 @@
 
 # HarmonyOS / DevEco / Hvigor
 .hvigor/
+.hvigor-cache/
 .ohos/
 .preview/
 .test/
@@ -30,6 +31,7 @@ dist/
 **/.cache/
 **/.deveco-sdk-shim/
 **/.logs/
+**/entry/src/main/ets/_shared/
 
 # Package manager
 node_modules/
@@ -41,8 +43,8 @@ node_modules/
 # Local configuration files (machine-specific)
 local.properties
 
-# Build profile (machine-specific paths)
-build-profile.json5
+# Root build profile is intentionally absent; app-level build profiles are required.
+/build-profile.json5
 
 # Claude local settings
 .claude/settings.local.json

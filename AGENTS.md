@@ -9,9 +9,11 @@ For any new session in this repository, load context in this order:
 1. Read `AGENTS.md`.
 2. Read `CLAUDE.md`.
 3. Read `.cursor/rules/*.mdc` in lexical order.
-4. If the user references `.r2mo/task/*.md`, read the task body after frontmatter before changing code.
-5. Inspect the target `app-*` directory before editing code.
-6. Read the local `app.json`, `build-profile.json5`, `entry/src/main/module.json5`, and launch scripts for the app being changed.
+4. This includes the extended rule set: `60-arkts-coding-standards.mdc`, `70-module-boundaries.mdc`, `75-cross-app-communication.mdc`, `80-harness-toolchain.mdc`, and `90-code-generation-guardrails.mdc`.
+5. If the user references `.r2mo/task/*.md`, read the task body after frontmatter before changing code.
+6. Inspect the target `app-*` directory before editing code.
+7. Read the local `app.json`, `build-profile.json5`, `entry/src/main/module.json5`, and launch scripts for the app being changed.
+8. When troubleshooting build, launch, runtime, or agent workflow problems, check `docs/troubleshooting.md`.
 
 ## Root Policy
 
@@ -23,7 +25,7 @@ For any new session in this repository, load context in this order:
 
 - Each `app-*` directory is an independent HarmonyOS application project.
 - Each app must keep its own `AppScope/`, `entry/`, `build-profile.json5`, `oh-package.json5`, `hvigorfile.ts`, and `app.json`.
-- Each app must provide `dev-build.sh`, `dev-start.sh`, `dev-stop.sh`, and `run-start.sh` (plus matching `.bat` variants for Windows).
+- Each app must provide `dev-build.sh`, `dev-start.sh`, `dev-stop.sh`, `dev-preview.sh`, and `run-start.sh` (plus matching `.bat` variants for Windows).
 - Shared shell logic should stay inside each app’s `scripts/common.sh` (and `scripts/common.bat` for Windows).
 
 ## Current Apps
@@ -33,6 +35,7 @@ For any new session in this repository, load context in this order:
 - `app-security`: security app.
 - `app-hello`: sample business app.
 - `app-medication`: medication reminder app centered on elderly health.
+- `app-album`: encrypted private photo album app.
 
 ## Runtime Rules
 
@@ -67,6 +70,10 @@ When project behavior changes in a way that affects onboarding, scripts, archite
 - `CLAUDE.md`
 - `AGENTS.md`
 - `.cursor/rules/*.mdc` when the change should be machine-loaded early in future sessions
+- `docs/adr/` when an architecture decision changes or a new durable decision is made
+- `docs/troubleshooting.md` when a repeatable failure mode or diagnosis path is discovered
+- `docs/app-json-schema.md` when `app.json` fields or meanings change
+- `CHANGELOG.md` for notable workspace-level changes
 
 ## Preferred Debug Entry Points
 
@@ -100,5 +107,10 @@ This repository ships split onboarding MDC files:
 - `.cursor/rules/30-scripts-and-debug.mdc`
 - `.cursor/rules/40-task-workflow-and-docs.mdc`
 - `.cursor/rules/50-app-initialization.mdc`
+- `.cursor/rules/60-arkts-coding-standards.mdc`
+- `.cursor/rules/70-module-boundaries.mdc`
+- `.cursor/rules/75-cross-app-communication.mdc`
+- `.cursor/rules/80-harness-toolchain.mdc`
+- `.cursor/rules/90-code-generation-guardrails.mdc`
 
 Read them in lexical order after `CLAUDE.md`.

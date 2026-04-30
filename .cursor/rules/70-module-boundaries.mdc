@@ -1,0 +1,36 @@
+# HarmonyOS Module Boundary Rules
+
+## Purpose
+
+Use this rule before changing any `app-*` source, runtime metadata, module manifest, or cross-app launch behavior.
+
+## App Isolation
+
+- Every top-level `app-*` directory is an independent HarmonyOS application project.
+- Do not import ArkTS source from another app directory.
+- Do not reach into another app's `entry/src/main/ets` tree from the current app.
+- Shared behavior must be copied deliberately, moved into an approved shared package, or exposed through runtime contracts. Do not create ad hoc cross-app source dependencies.
+
+## Cross-App Communication
+
+- App-to-app launch and coordination must use HarmonyOS Want-based `startAbility` flows or `AppServiceExtensionAbility`.
+- Treat each app's `app.json` as the source of truth for `dependsOn` and `launchTargets`.
+- Before adding a launch target, update metadata and the UI/runtime code together so the relationship remains explicit.
+
+## Edit Scope
+
+- When a task targets one app, edit that app only unless the task explicitly requires app-center wiring, dependency metadata, docs, or sibling app changes.
+- Do not modify other apps opportunistically while fixing the current app.
+- Root-level docs and rules may be updated only when behavior, onboarding, runtime architecture, or task workflow changes.
+
+## Desktop Entry Rule
+
+- `app-center` is the only default desktop entry.
+- Child apps must not declare the `entity.system.home` skill unless a task explicitly changes the workspace desktop-entry model.
+- If a child app needs to be opened from the desktop for temporary debugging, keep that as local/debug-only configuration and do not commit it as the default workspace behavior.
+
+## New App Rule
+
+- New apps must follow `.cursor/rules/50-app-initialization.mdc`.
+- New apps must be registered through `app-center` instead of inventing a separate launcher.
+- New apps must include an app-level `REQ.md` baseline that states positioning, users, MVP scope, and workspace integration expectations.

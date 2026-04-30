@@ -32,18 +32,25 @@ Every initialized app must include at least:
 - `dev-build.sh`
 - `dev-start.sh`
 - `dev-stop.sh`
+- `dev-preview.sh`
 - `run-start.sh`
 - `dev-build.bat`
 - `dev-start.bat`
 - `dev-stop.bat`
+- `dev-preview.bat`
 - `run-start.bat`
 - `scripts/common.sh`
 - `scripts/common.bat`
 
 ## Preferred Initialization Method
 
-- Prefer cloning the closest existing `app-*` scaffold instead of generating files from scratch.
-- After cloning, immediately rewrite app identity:
+- Prefer `scripts/create-app.sh` on macOS/Linux or `scripts/create-app.bat` on Windows for new app scaffolding:
+  - Unix: `./scripts/create-app.sh --name app-example --label "示例应用"`
+  - Windows: `scripts\create-app.bat --name app-example --label "示例应用"`
+- Use `--template <template-dir>` only when the default `templates/app-template` is not appropriate.
+- The initialization script should copy the template, rewrite app identity, remove transient artifacts, register the app in `app-center`, and report any skipped environment-specific build/setup hooks.
+- If the script/template is unsuitable for the task, fall back to cloning the closest existing `app-*` scaffold.
+- After a manual clone fallback, immediately rewrite app identity:
   - directory name
   - `app.json`
   - `AppScope/app.json5`

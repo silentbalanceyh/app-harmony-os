@@ -1,6 +1,7 @@
 import common from '@ohos.app.ability.common';
 import Want from '@ohos.app.ability.Want';
-import SoundEffectPlayer from '../utils/SoundEffectPlayer';
+import SoundEffectPlayer from '../_shared/audio/SoundEffectPlayer';
+import Logger from '../_shared/utils/Logger';
 
 interface TargetApp {
   id: string;
@@ -15,6 +16,7 @@ const COMMAND_OPEN_ENTRY: string = 'open-entry';
 const START_WITHOUT_TIPS_FLAG: number = 0x100000;
 const LAUNCH_SOUND_FILE: string = 'launch.wav';
 const RETURN_SOUND_FILE: string = 'return.wav';
+const LOGGER: Logger = Logger.create('app-hello');
 
 @Entry
 @Component
@@ -67,9 +69,10 @@ struct Index {
     try {
       await this.getAbilityContext().startAbility(this.buildEntryWant(target, scene));
       this.handshake = '已拉起 ' + target.label;
+      LOGGER.info('Launched ' + target.id + ' for scene ' + scene);
     } catch (err) {
       this.handshake = '拉起 ' + target.label + ' 失败';
-      console.error('Launch failed: ' + JSON.stringify(err));
+      LOGGER.error('Launch failed: ' + Logger.stringify(err));
     }
   }
 

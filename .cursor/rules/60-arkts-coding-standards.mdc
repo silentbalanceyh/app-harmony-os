@@ -1,0 +1,60 @@
+# HarmonyOS ArkTS And ArkUI Coding Standards
+
+## Purpose
+
+Use this rule before generating or editing ArkTS, ArkUI pages, abilities, extension abilities, or app utilities.
+
+## ArkTS Syntax Guardrails
+
+Do not generate these patterns in ArkTS code:
+
+- CommonJS `require()`
+- object spread such as `{ ...obj }`
+- array spread such as `[ ...items ]`
+- `delete target.key`
+- `eval()`
+- dynamic property names or bracket-based object mutation when a typed property is expected
+
+Use these replacements:
+
+- ES module imports such as `import fs from '@ohos.file.fs'`
+- explicit object construction with named fields
+- `items.slice()` when a shallow array copy is needed
+- assign `undefined` or rebuild a typed object instead of using `delete`
+- typed switch/if mappings instead of runtime evaluation
+- declared interfaces/classes instead of dynamic dictionaries when possible
+
+## File System API Rules
+
+- Do not use `fs.readTextSync` or `fs.writeTextSync`.
+- For text files, use `fs.openSync` with `readSync` or `writeSync`, then convert bytes with `util.TextDecoder` or `util.TextEncoder`.
+- Always close file handles in cleanup paths.
+- Keep blocking file I/O out of UI render paths and gesture callbacks unless the data volume is known to be tiny and the task explicitly accepts the tradeoff.
+
+## Naming Conventions
+
+- Page files: PascalCase, for example `Index.ets` or `SettingsPage.ets`.
+- Utility files: camelCase when the file exports utility functions, or PascalCase when it exports a main class.
+- Components and structs: PascalCase.
+- Functions and methods: camelCase.
+- Constants: use the nearest existing app convention; prefer clear typed constants over magic literals.
+
+## Import Conventions
+
+- Prefer default module imports such as `import fs from '@ohos.file.fs'`.
+- Avoid `import * as X from '@ohos.module'` unless an existing local file already uses that form for the same module and ArkTS accepts it in this workspace.
+- Keep imports static and top-level.
+- Do not reference modules that are not available in the current HarmonyOS SDK or app dependency set.
+
+## State Management
+
+- Use `@State` for local mutable UI state owned by the component.
+- Use `@Prop` for one-way data received from a parent.
+- Use `@Link` only when a child must mutate parent-owned state.
+- Do not use global mutable state as a shortcut for page coordination when a typed property, route parameter, service, or app metadata can carry the data.
+
+## Gesture Conventions
+
+- Use `.gesture(LongPressGesture().onAction(...))` for long press interactions.
+- Do not use `onLongClick`; it is not the preferred ArkUI pattern in this workspace.
+- Keep gesture callbacks short. Move non-trivial work into named methods or services.

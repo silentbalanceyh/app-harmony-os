@@ -18,7 +18,7 @@
 
 - Each `app-*` directory is a standalone HarmonyOS app project.
 - Each app must own its own `AppScope/`, `entry/`, `build-profile.json5`, `oh-package.json5`, `hvigorfile.ts`, and `app.json`.
-- Each app must provide `dev-build.sh`, `dev-start.sh`, `dev-stop.sh`, and `run-start.sh` (Unix) plus matching `.bat` variants (Windows).
+- Each app must provide `dev-build.sh`, `dev-start.sh`, `dev-stop.sh`, `dev-preview.sh`, and `run-start.sh` (Unix) plus matching `.bat` variants (Windows).
 - Shared shell logic should stay inside each app’s `scripts/common.sh` (Unix) and `scripts/common.bat` (Windows).
 
 ## App Relationship Source Of Truth
@@ -38,3 +38,4 @@ Use each app’s `app.json` for:
 - `app-security`: security app
 - `app-hello`: sample business app
 - `app-medication`: medication reminder app for elderly health
+- `app-album`: encrypted private photo album app

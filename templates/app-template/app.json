@@ -1,0 +1,13 @@
+{
+  "app": "_APP_NAME_",
+  "device": "",
+  "bundleName": "_BUNDLE_NAME_",
+  "moduleName": "entry",
+  "abilityName": "EntryAbility",
+  "dependsOn": [
+    "app-center"
+  ],
+  "launchTargets": [
+    "app-center"
+  ]
+}

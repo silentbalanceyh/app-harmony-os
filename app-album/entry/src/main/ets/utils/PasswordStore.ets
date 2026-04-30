@@ -1,6 +1,6 @@
 import dataPreferences from '@ohos.data.preferences';
-import { Context } from '@ohos.abilityAccessCtrl';
 import common from '@ohos.app.ability.common';
+import { CryptoUtil } from './CryptoUtil';
 
 const PREFS_NAME = 'album_security';
 const KEY_PASSWORD_HASH = 'password_hash';
@@ -30,7 +30,9 @@ export class PasswordStore {
 
   async setPassword(password: string): Promise<void> {
     if (!this.prefs) return;
-    await this.prefs.put(KEY_PASSWORD_HASH, simpleHash(password));
+    const salt = CryptoUtil.generateSalt();
+    const hash = await CryptoUtil.hashPassword(password, salt);
+    await this.prefs.put(KEY_PASSWORD_HASH, hash);
     await this.prefs.put(KEY_PASSWORD_SET, true);
     await this.prefs.flush();
   }
@@ -38,7 +40,19 @@ export class PasswordStore {
   async verifyPassword(password: string): Promise<boolean> {
     if (!this.prefs) return false;
     const stored = await this.prefs.get(KEY_PASSWORD_HASH, '') as string;
-    return simpleHash(password) === stored;
+    if (!stored) return false;
+
+    if (CryptoUtil.isLegacyHash(stored)) {
+      const legacyMatch = simpleHash(password) === stored;
+      if (legacyMatch) {
+        const newHash = await CryptoUtil.migrateLegacyHash(password, stored);
+        await this.prefs.put(KEY_PASSWORD_HASH, newHash);
+        await this.prefs.flush();
+      }
+      return legacyMatch;
+    }
+
+    return await CryptoUtil.verifyPassword(password, stored);
   }
 
   async clearPassword(): Promise<void> {

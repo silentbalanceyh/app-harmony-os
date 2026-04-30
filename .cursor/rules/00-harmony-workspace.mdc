@@ -23,6 +23,7 @@ This file is the stable top-level MDC entry for the HarmonyOS multi-app workspac
 - `app-security`
 - `app-hello`
 - `app-medication`
+- `app-album`
 
 ## Stable Baseline Rules
 
@@ -38,3 +39,8 @@ This file is the stable top-level MDC entry for the HarmonyOS multi-app workspac
 - `30-scripts-and-debug.mdc`
 - `40-task-workflow-and-docs.mdc`
 - `50-app-initialization.mdc`
+- `60-arkts-coding-standards.mdc`
+- `70-module-boundaries.mdc`
+- `75-cross-app-communication.mdc`
+- `80-harness-toolchain.mdc`
+- `90-code-generation-guardrails.mdc`

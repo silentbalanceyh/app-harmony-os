@@ -41,6 +41,13 @@
 - `app-center` 需要把它纳入依赖和应用清单，支持安装、打开和桌面显隐管理。
 - 默认仍按“应用中心主入口、子应用隐藏桌面”的工作区规则运行。
 
+## Workspace Integration Expectations
+
+- Keep `app-center` as the primary discovery and launch entry.
+- Keep source isolated inside `app-medication`; cross-app behavior must use Want or app service extension contracts.
+- Keep `app.json` aligned with bundle, module, ability, dependency, and launch-target metadata.
+- Preserve low-friction return to `app-center`.
+
 ## 后续扩展方向
 
 - 真正的定时提醒、通知栏提醒和漏服升级提醒。

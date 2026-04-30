@@ -6,12 +6,14 @@ import fs from '@ohos.file.fs';
 import common from '@ohos.app.ability.common';
 import Want from '@ohos.app.ability.Want';
 import { getDataManager, MediaDataManager } from '../models/AlbumData';
+import { fileRepo } from '../utils/FileRepoUtil';
 
 interface ImportSource {
   id: string;
   icon: string;
   title: string;
   description: string;
+  available: boolean;
 }
 
 interface ImportRouterParams {
@@ -33,36 +35,31 @@ struct ImportGuidePage {
     switch (this.contentType) {
       case 'video':
         return [
-          { id: 'system_album', icon: '🎬', title: '系统相册', description: '从手机自带相册中选择视频导入到当前目录' },
-          { id: 'local_file', icon: '📁', title: '本地文件', description: '从手机本地存储中选择视频文件导入' },
-          { id: 'camera', icon: '📷', title: '录像', description: '直接拍摄视频并保存到当前目录' },
-          { id: 'app_share', icon: '📤', title: '应用分享', description: '通过系统分享功能从其他应用接收视频' }
+          { id: 'system_album', icon: '🎬', title: '系统相册', description: '从手机自带相册中选择视频导入到当前目录', available: true },
+          { id: 'local_file', icon: '📁', title: '本地文件', description: '从手机本地存储中选择视频文件导入', available: true },
+          { id: 'camera', icon: '📷', title: '录像', description: '直接拍摄视频并保存到当前目录', available: true }
         ];
       case 'gif':
         return [
-          { id: 'system_album', icon: '🎭', title: '系统相册', description: '从手机自带相册中选择动图导入到当前目录' },
-          { id: 'local_file', icon: '📁', title: '本地文件', description: '从手机本地存储中选择动图文件导入' },
-          { id: 'app_share', icon: '📤', title: '应用分享', description: '通过系统分享功能从其他应用接收动图' }
+          { id: 'system_album', icon: '🎭', title: '系统相册', description: '从手机自带相册中选择动图导入到当前目录', available: true },
+          { id: 'local_file', icon: '📁', title: '本地文件', description: '从手机本地存储中选择动图文件导入', available: true }
         ];
       case 'doc':
         return [
-          { id: 'local_file', icon: '📄', title: '本地文件', description: '从手机本地存储中选择文档文件导入' },
-          { id: 'cloud_drive', icon: '☁️', title: '云盘导入', description: '从云存储服务下载文档到当前目录' },
-          { id: 'app_share', icon: '📤', title: '应用分享', description: '通过系统分享功能从其他应用接收文档' },
-          { id: 'download', icon: '⬇️', title: '链接下载', description: '通过链接下载文档到当前目录' }
+          { id: 'local_file', icon: '📄', title: '本地文件', description: '从手机本地存储中选择文档文件导入', available: true },
+          { id: 'cloud_drive', icon: '☁️', title: '云盘导入', description: '请先从云盘下载到本地，再通过「本地文件」导入', available: false },
+          { id: 'download', icon: '⬇️', title: '链接下载', description: '请使用浏览器下载后，通过「本地文件」导入', available: false }
         ];
       case 'record':
         return [
-          { id: 'record_audio', icon: '🎙️', title: '录音', description: '直接录制音频并保存到当前目录' },
-          { id: 'local_file', icon: '📁', title: '本地文件', description: '从手机本地存储中选择音频或文件导入' },
-          { id: 'app_share', icon: '📤', title: '应用分享', description: '通过系统分享功能从其他应用接收文件' }
+          { id: 'local_file', icon: '📁', title: '本地文件', description: '从手机本地存储中选择音频或文件导入', available: true },
+          { id: 'record_audio', icon: '🎙️', title: '录音', description: '启动系统录音，完成后手动导入录音文件', available: true }
         ];
       default:
         return [
-          { id: 'system_album', icon: '🖼️', title: '系统相册', description: '从手机自带相册中选择照片导入到当前目录' },
-          { id: 'local_file', icon: '📁', title: '本地文件', description: '从手机本地存储中选择图片文件导入' },
-          { id: 'camera', icon: '📷', title: '拍照', description: '直接拍摄照片并保存到当前目录' },
-          { id: 'app_share', icon: '📤', title: '应用分享', description: '通过系统分享功能从其他应用接收照片' }
+          { id: 'system_album', icon: '🖼️', title: '系统相册', description: '从手机自带相册中选择照片导入到当前目录', available: true },
+          { id: 'local_file', icon: '📁', title: '本地文件', description: '从手机本地存储中选择图片文件导入', available: true },
+          { id: 'camera', icon: '📷', title: '拍照', description: '直接拍摄照片并保存到当前目录', available: true }
         ];
     }
   }
@@ -108,6 +105,21 @@ struct ImportGuidePage {
     }
   }
 
+  private async importAndCopy(sourceUri: string): Promise<void> {
+    const name = this.extractNameFromUri(sourceUri);
+    const size = await this.getFileSize(sourceUri);
+    const item = this.dataManager.addItem(name, this.folderId, sourceUri, size, undefined, name);
+
+    const privatePath = await fileRepo.copyToRepo(sourceUri, this.contentType, item.id);
+    if (privatePath) {
+      const savedItem = this.dataManager.getItemById(item.id);
+      if (savedItem) {
+        savedItem.privatePath = privatePath;
+        this.dataManager.saveData();
+      }
+    }
+  }
+
   private async importFromSystemAlbum(): Promise<void> {
     try {
       const photoPicker = new picker.PhotoViewPicker();
@@ -117,9 +129,7 @@ struct ImportGuidePage {
       });
       if (result.photoUris && result.photoUris.length > 0) {
         for (const uri of result.photoUris) {
-          const name = this.extractNameFromUri(uri);
-          const size = await this.getFileSize(uri);
-          this.dataManager.addItem(name, this.folderId, uri, size);
+          await this.importAndCopy(uri);
         }
         promptAction.showToast({
           message: `已导入 ${result.photoUris.length} 项`,
@@ -144,9 +154,7 @@ struct ImportGuidePage {
       const uris: string[] = (result as Object as Record<string, string[]>).result ?? [];
       if (uris.length > 0) {
         for (const uri of uris) {
-          const name = this.extractNameFromUri(uri);
-          const size = await this.getFileSize(uri);
-          this.dataManager.addItem(name, this.folderId, uri, size);
+          await this.importAndCopy(uri);
         }
         promptAction.showToast({
           message: `已导入 ${uris.length} 项`,
@@ -170,9 +178,7 @@ struct ImportGuidePage {
       const result = await cameraPicker.pick(this.getAbilityContext(), [mediaType], { cameraPosition: 0 });
       const resultUri: string = (result as Object as Record<string, string>).resultUri ?? '';
       if (resultUri.length > 0) {
-        const name = this.extractNameFromUri(resultUri);
-        const size = await this.getFileSize(resultUri);
-        this.dataManager.addItem(name, this.folderId, resultUri, size);
+        await this.importAndCopy(resultUri);
         promptAction.showToast({
           message: '拍摄完成，已保存到当前目录',
           duration: 2000
@@ -197,19 +203,26 @@ struct ImportGuidePage {
       };
       await this.getAbilityContext().startAbility(want);
       promptAction.showToast({
-        message: '已启动系统录音，请手动将录音文件导入',
+        message: '已启动系统录音，完成后请通过「本地文件」导入录音文件',
         duration: 3000
       });
     } catch (err) {
       console.error('Record audio failed:', JSON.stringify(err));
       promptAction.showToast({
-        message: '无法启动录音应用',
+        message: '无法启动录音应用，请通过本地文件导入录音',
         duration: 2000
       });
     }
   }
 
   handleImport(source: ImportSource) {
+    if (!source.available) {
+      promptAction.showToast({
+        message: source.description,
+        duration: 3000
+      });
+      return;
+    }
     switch (source.id) {
       case 'system_album':
         void this.importFromSystemAlbum();
@@ -223,27 +236,9 @@ struct ImportGuidePage {
       case 'record_audio':
         void this.recordAudio();
         break;
-      case 'app_share':
-        promptAction.showToast({
-          message: '请从其他应用通过「分享」选择本应用接收',
-          duration: 3000
-        });
-        break;
-      case 'cloud_drive':
-        promptAction.showToast({
-          message: '请先从云盘下载到本地，再通过「本地文件」导入',
-          duration: 3000
-        });
-        break;
-      case 'download':
-        promptAction.showToast({
-          message: '请使用浏览器下载后，通过「本地文件」导入',
-          duration: 3000
-        });
-        break;
       default:
         promptAction.showToast({
-          message: `开发中：${source.title}导入功能即将上线`,
+          message: `暂不支持：${source.title}`,
           duration: 2000
         });
     }
@@ -288,13 +283,22 @@ struct ImportGuidePage {
               .alignItems(HorizontalAlign.Start)
               .layoutWeight(1)
 
-              Text('›')
-                .fontSize(24).fontColor('#D1D5DB')
+              if (!source.available) {
+                Text('不可用')
+                  .fontSize(12).fontColor('#9CA3AF')
+                  .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                  .borderRadius(4)
+                  .backgroundColor('#F3F4F6')
+              } else {
+                Text('›')
+                  .fontSize(24).fontColor('#D1D5DB')
+              }
             }
             .width('100%')
             .padding(16)
             .backgroundColor('#FFFFFF')
             .borderRadius(12)
+            .opacity(source.available ? 1 : 0.6)
           }
           .onClick(() => { this.handleImport(source); })
         }, (source: ImportSource) => source.id)
@@ -303,7 +307,7 @@ struct ImportGuidePage {
       .padding({ left: 16, right: 16 })
       .layoutWeight(1)
 
-      Text('导入的内容将保存在当前选中的目录中')
+      Text('导入的内容将加密保存在当前目录中')
         .fontSize(12).fontColor('#9CA3AF')
         .textAlign(TextAlign.Center)
         .padding({ top: 12, bottom: 24 })
